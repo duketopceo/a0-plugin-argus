@@ -1,0 +1,33 @@
+{
+  "ok": false,
+  "skipped": false,
+  "summary": "Two findings need attention before merge.",
+  "verdict": "needs_changes",
+  "findings": [
+    {
+      "file": "src/discount.ts",
+      "line": 42,
+      "severity": "bug",
+      "message": "applyDiscount multiplies instead of dividing by 100",
+      "evidence": { "status": "not_exercised", "detail": "no test reaches discount.ts" }
+    },
+    {
+      "file": "src/query.ts",
+      "line": 12,
+      "severity": "risk",
+      "message": "unbounded query may page through the whole table",
+      "evidence": { "status": "exercised", "detail": "tests/query.test.ts covers it" }
+    },
+    {
+      "file": "src/util.ts",
+      "severity": "nit",
+      "message": "unused import"
+    }
+  ],
+  "probeLaneSkipped": "no docker daemon",
+  "calls": [],
+  "visionCostUsd": 0.0312,
+  "tokens": 48210,
+  "model": "deepseek/deepseek-v4.1-flash",
+  "budgetExceeded": true
+}

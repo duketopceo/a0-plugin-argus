@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "skipped": false,
+  "summary": "Clean after adjudication.",
+  "verdict": "approve",
+  "findings": [
+    {
+      "file": "src/auth/login.ts",
+      "line": 7,
+      "severity": "nit",
+      "category": "convention",
+      "message": "prefer const over let",
+      "p": 0.4
+    }
+  ],
+  "triage": { "mode": "annotate", "risk": 2, "needsDeepReview": 0.3, "topRiskArea": "auth" },
+  "secretsScan": { "skipped": "no checkout" },
+  "calls": [],
+  "visionCostUsd": 0.004,
+  "tokens": 9000,
+  "model": "deepseek/deepseek-v4.1-flash",
+  "budgetExceeded": false
+}

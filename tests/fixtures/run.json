@@ -1,0 +1,16 @@
+{
+  "ok": false,
+  "totals": {
+    "tests": 3,
+    "passed": 2,
+    "visionCalls": 5,
+    "visionCostUsd": 0.021,
+    "sandboxSeconds": 41.2,
+    "budgetExceeded": false
+  },
+  "tests": [
+    { "name": "checkout flow", "ok": true, "visionCalls": 2, "visionCostUsd": 0.01, "sandboxSeconds": 15.1, "budgetExceeded": false },
+    { "name": "search flow", "ok": true, "visionCalls": 1, "visionCostUsd": 0.005, "sandboxSeconds": 10.0, "budgetExceeded": false },
+    { "name": "profile flow", "ok": false, "failureMessage": "assert 'name visible' failed", "visionCalls": 2, "visionCostUsd": 0.006, "sandboxSeconds": 16.1, "budgetExceeded": false }
+  ]
+}
