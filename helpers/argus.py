@@ -60,6 +60,21 @@ def _parse_scalar(raw):
     return v.strip('"\'')
 
 
+def _truthy(v):
+    """A0 passes tool args as strings; settings may be bool/int."""
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return bool(v)
+
+
+def _bounded(v, lo, hi, default):
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return default
+    return max(lo, min(hi, n))
+
+
 def load_default_config():
     """default_config.yaml is flat `key: scalar` — parse it without requiring
     PyYAML in the framework runtime."""
@@ -242,7 +257,12 @@ async def run_argus(argv, cwd, env, timeout_s, on_line=None, abort_check=None):
 
     async def _watch_abort():
         while abort_check is not None and proc.returncode is None:
-            if abort_check():
+            r = abort_check()
+            if asyncio.iscoroutine(r):
+                # e.g. agent.handle_intervention() — raises InterventionException
+                # on user abort; the caller re-raises after the group is killed.
+                await r
+            elif r:
                 return
             await asyncio.sleep(1.0)
 
@@ -255,6 +275,8 @@ async def run_argus(argv, cwd, env, timeout_s, on_line=None, abort_check=None):
             timeout=timeout_s,
             return_when=asyncio.FIRST_COMPLETED,
         )
+        if watcher is not None and watcher in done and watcher.exception() is not None:
+            raise watcher.exception()  # e.g. InterventionException — finally kills the group
         if not done:
             result["timed_out"] = True
         elif waiter not in done and proc.returncode is None:
@@ -312,23 +334,24 @@ def prepare_review_cwd(checkout, trusted):
             "for evidence depth, or omit checkout entirely"
         )
     scratch = tempfile.mkdtemp(prefix="argus-review-")
-    code, out, err = _git(path, ["archive", "--format=tar", "HEAD"], timeout=60)
-    if code != 0:
-        raise ArgusError(f"`git archive` failed on '{checkout}': {err.strip()[:200]}")
     try:
-        with tarfile.open(fileobj=io.BytesIO(out.encode("latin-1")), mode="r:") as tf:
-            tf.extractall(scratch, filter="data")
-    except (tarfile.TarError, UnicodeEncodeError):
-        # latin-1 preserves arbitrary bytes 1:1; a failure here is unexpected
-        # — fall back to a real subprocess pipe.
-        code = subprocess.call(
-            f"git -C {str(path)!r} archive --format=tar HEAD | tar -x -C {scratch!r}",
-            shell=True,
+        p = subprocess.run(
+            ["git", "-C", str(path), "archive", "--format=tar", "HEAD"],
+            capture_output=True,
+            timeout=60,
             stdin=subprocess.DEVNULL,
             env=build_child_env({}),
         )
-        if code != 0:
-            raise ArgusError(f"couldn't extract git archive of '{checkout}'")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise ArgusError(f"`git archive` failed on '{checkout}': {e}")
+    if p.returncode != 0:
+        err = (p.stderr or b"").decode("utf-8", "replace").strip()[:200]
+        raise ArgusError(f"`git archive` failed on '{checkout}': {err}")
+    try:
+        with tarfile.open(fileobj=io.BytesIO(p.stdout), mode="r:") as tf:
+            tf.extractall(scratch, filter="data")
+    except tarfile.TarError as e:
+        raise ArgusError(f"couldn't extract git archive of '{checkout}': {e}")
     for name in _EXEC_CONFIG_NAMES:
         try:
             (Path(scratch) / name).unlink()
