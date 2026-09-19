@@ -47,8 +47,11 @@ enable `trust_checkout` with a checkout that has argus as a dependency.
 
 ## Credentials (host-level)
 
-Set these as environment variables on the A0 host — not in the plugin config,
-not in chat. Settings hold only the *names* of these variables.
+Set these as environment variables on the A0 host **or** in A0's secrets store
+(Settings → Secrets, `usr/secrets.env`) — the plugin checks process env first,
+then the secrets store. Not in the plugin config, not in chat. Settings hold
+only the *names* of these variables, so `github_token_env: PERSONAL_GITHUB_PAT`
+works when your token already lives in the secrets store.
 
 ### GitHub token — fine-grained PAT (recommended)
 
@@ -79,10 +82,10 @@ Values are env-var **names** and policy only — never secret values.
 | `github_token_env` | `GITHUB_TOKEN` | Env var with the PR-read token (and posting fallback) |
 | `comment_token_env` | `""` | Env var with the posting token; empty = use `github_token_env` |
 | `openrouter_key_env` | `OPENROUTER_API_KEY` | Env var with the OpenRouter key |
-| `trust_checkout` | `false` | Master trust gate — see Security model |
+| `trust_checkout` | `false` | Gates `argus_flow` and the review trust path (cwd + CLI resolution) — see Security model |
 | `review_timeout_s` | `1200` | Wall-clock cap per review |
 | `flow_timeout_s` | `1800` | Wall-clock cap per flow run |
-| `argus_version_pin` | `""` | npm spec vendored at install (e.g. `0.1.3`); empty = latest |
+| `argus_version_pin` | `"0.1.3"` | npm spec vendored at install; empty = latest |
 | `flow_budget_usd` | `""` | USD cap injected as `ARGUS_BUDGET_USD` for `argus_flow` only |
 | `default_checkout` | `""` | Fallback checkout path for both tools |
 

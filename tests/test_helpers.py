@@ -157,6 +157,8 @@ def test_prepare_untrusted_archives_without_exec_config(tmp_path):
     src = tmp_path / "checkout"
     _init_git(src)
     (src / "argus-reviewer.config.ts").write_text("export default {}\n")
+    (src / "argus-reviewer.config.mjs").write_text("export default {}\n")
+    (src / "vision-e2e.config.cjs").write_text("module.exports = {}\n")
     (src / "argus-reviewer.config.json").write_text('{"model":"m"}\n')
     (src / "src").mkdir()
     (src / "src" / "app.ts").write_text("export {}\n")
@@ -171,8 +173,27 @@ def test_prepare_untrusted_archives_without_exec_config(tmp_path):
     assert Path(cwd) != src
     assert (Path(cwd) / "src" / "app.ts").exists()
     assert not (Path(cwd) / "argus-reviewer.config.ts").exists()
+    assert not (Path(cwd) / "argus-reviewer.config.mjs").exists()
+    assert not (Path(cwd) / "vision-e2e.config.cjs").exists()
     assert (Path(cwd) / "argus-reviewer.config.json").exists()  # data config survives
     assert "archive" in note
+
+
+def test_git_invocations_carry_safe_flags(tmp_path, monkeypatch):
+    seen = []
+    real_run = subprocess.run
+
+    def spy(*a, **k):
+        seen.append(a[0])
+        return real_run(*a, **k)
+
+    monkeypatch.setattr(argus.subprocess, "run", spy)
+    _init_git(tmp_path / "co")
+    argus._git(tmp_path / "co", ["rev-parse", "--git-dir"])
+    argv = seen[-1]
+    assert argv[0] == "git"
+    for flag in argus._GIT_SAFE_FLAGS:
+        assert flag in argv
 
 
 def test_prepare_untrusted_non_git_errors(tmp_path):

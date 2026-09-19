@@ -30,7 +30,16 @@ GH_API = "https://api.github.com"
 SENTINEL = "<!-- argus-reviewer -->"
 MAX_FINDING_ROWS = 25
 TAIL_BYTES = 4096
-_EXEC_CONFIG_NAMES = ("argus-reviewer.config.ts", "vision-e2e.config.ts")
+# Executable config extensions only — .json is pure data and may safely load.
+_EXEC_CONFIG_GLOBS = tuple(
+    f"{base}.{ext}"
+    for base in ("argus-reviewer.config", "vision-e2e.config")
+    for ext in ("ts", "js", "mjs", "cjs", "mts", "cts")
+)
+# git always reads <checkout>/.git/config — a hostile repo can arm
+# core.hooksPath/credential helpers there. Command-line -c overrides local.
+_GIT_SAFE_FLAGS = ("-c", "core.hooksPath=", "-c", "core.fsmonitor=false",
+                   "-c", "credential.helper=")
 
 
 class ArgusError(Exception):
@@ -311,7 +320,7 @@ async def run_argus(argv, cwd, env, timeout_s, on_line=None, abort_check=None):
 def _git(cwd, args, timeout=15):
     try:
         p = subprocess.run(
-            ["git", "-C", str(cwd), *args],
+            ["git", *_GIT_SAFE_FLAGS, "-C", str(cwd), *args],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -346,7 +355,8 @@ def prepare_review_cwd(checkout, trusted):
     scratch = tempfile.mkdtemp(prefix="argus-review-")
     try:
         p = subprocess.run(
-            ["git", "-C", str(path), "archive", "--format=tar", "HEAD"],
+            ["git", *_GIT_SAFE_FLAGS, "-C", str(path), "archive",
+             "--format=tar", "HEAD"],
             capture_output=True,
             timeout=60,
             stdin=subprocess.DEVNULL,
@@ -362,11 +372,12 @@ def prepare_review_cwd(checkout, trusted):
             tf.extractall(scratch, filter="data")
     except tarfile.TarError as e:
         raise ArgusError(f"couldn't extract git archive of '{checkout}': {e}")
-    for name in _EXEC_CONFIG_NAMES:
-        try:
-            (Path(scratch) / name).unlink()
-        except OSError:
-            pass
+    for glob in _EXEC_CONFIG_GLOBS:
+        for cfg in Path(scratch).glob(glob):
+            try:
+                cfg.unlink()
+            except OSError:
+                pass
     return scratch, f"archive copy of {checkout} (config code stripped)"
 
 
