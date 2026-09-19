@@ -113,9 +113,19 @@ def resolve_settings(agent=None):
 
 
 def env_value(settings, key, default_env=""):
-    """Resolve a secret-bearing env var NAME to its value (never logged)."""
+    """Resolve a secret-bearing NAME to its value (never logged).
+    Process env first, then the A0 secrets store (usr/secrets.env + .env)."""
     name = str(settings.get(key) or "").strip() or default_env
-    return os.environ.get(name), name
+    value = os.environ.get(name)
+    if value:
+        return value, name
+    try:
+        from helpers.secrets import get_secrets_manager  # type: ignore
+
+        value = get_secrets_manager().load_secrets().get(name)
+    except Exception:
+        value = None
+    return value, name
 
 
 # --------------------------------------------------------------------------
