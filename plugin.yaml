@@ -1,0 +1,8 @@
+name: argus
+title: Argus PR Reviewer
+description: AI pull-request review and recorded-flow replay via the argus-reviewer CLI (BYOK through OpenRouter).
+version: 0.1.0
+settings_sections:
+  - external
+per_project_config: false
+per_agent_config: false

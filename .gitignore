@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Runtime artifacts produced by hooks.py install()
+helpers/probe-cache.json
+node_modules/
+package.json
+package-lock.json
+
+# Test scratch
+tests/fixtures/tmp/

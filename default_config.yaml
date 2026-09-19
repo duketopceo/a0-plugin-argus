@@ -1,0 +1,35 @@
+# Argus plugin settings — env-var NAMES and policy only, never secret values.
+# Set the referenced variables in the A0 host environment.
+
+# Env var holding the GitHub token used for PR reads (and posting, unless
+# comment_token_env is set to a different variable).
+github_token_env: GITHUB_TOKEN
+
+# Env var holding the token used for sticky-comment posting. Empty = use
+# github_token_env. Point at a separate variable only if posting needs a
+# different token.
+comment_token_env: ""
+
+# Env var holding the OpenRouter API key (BYOK model spend).
+openrouter_key_env: OPENROUTER_API_KEY
+
+# Trust gate. When true: argus_flow may run (it executes the checkout's test
+# files) and both tools may use checkout-local binaries / run inside the real
+# checkout — checkout config and test code then execute inside the A0 host.
+# Enable only for repos you would hand a terminal to.
+trust_checkout: false
+
+# Per-invocation wall-clock limits for the spawned argus process.
+review_timeout_s: 1200
+flow_timeout_s: 1800
+
+# npm version spec vendored at plugin install (e.g. "0.1.3"). Empty = latest.
+argus_version_pin: ""
+
+# USD cap injected as ARGUS_BUDGET_USD for argus_flow runs. Empty = uncapped.
+# NOTE: argus_review spend is NOT capped by this setting in v0.1 — review cost
+# is reported after the fact.
+flow_budget_usd: ""
+
+# Fallback checkout path when a tool call doesn't pass one. Empty = none.
+default_checkout: ""
