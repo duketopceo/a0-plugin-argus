@@ -27,7 +27,7 @@ flow_timeout_s: 1800
 # npm version spec vendored at plugin install. Pinned by default — the
 # report-schema parsing is asserted against this version; bump deliberately.
 # Empty = latest.
-argus_version_pin: "0.1.3"
+argus_version_pin: "0.2.0"
 
 # USD cap injected as ARGUS_BUDGET_USD for argus_flow runs. Empty = uncapped.
 # NOTE: argus_review spend is NOT capped by this setting in v0.1 — review cost
