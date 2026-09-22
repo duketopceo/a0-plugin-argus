@@ -32,6 +32,11 @@ missing and reports what's absent when a tool needs it.
 
 ## Installation
 
+**New to this stack?** [`docs/ONBOARDING.md`](docs/ONBOARDING.md) is the
+zero→auto-reviews walkthrough: start A0, add OpenRouter + a PAT, install
+this plugin, verify, then optionally wire `contrib/pr-watch` so PR pushes
+trigger reviews automatically. Recommended companion plugins listed there.
+
 From Agent Zero's plugin management, add the repository URL:
 
 ```
