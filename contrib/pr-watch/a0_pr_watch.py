@@ -12,7 +12,9 @@ key is read from the A0 settings file (or env), never logged.
 """
 
 import argparse
+import base64
 import fcntl
+import hashlib
 import json
 import os
 import subprocess
@@ -23,7 +25,7 @@ from pathlib import Path
 DEFAULT_CONFIG = {
     "repos": [],
     "a0_url": "http://localhost:5000",
-    "a0_settings": "/home/khan/agent-zero/usr/settings.json",
+    "a0_env": "/home/khan/agent-zero/usr/.env",
     "state_file": "~/.local/state/a0-pr-watch/state.json",
     "post": True,
     "skip_authors": [],
@@ -40,10 +42,23 @@ def load_config(path):
 
 
 def api_key(cfg):
+    """Derive A0's API token the same way A0 does (helpers/settings.py
+    create_auth_token): sha256(runtime_id:auth_login:auth_password), first 16
+    chars of urlsafe-b64. runtime_id + auth creds live in the A0 usr .env —
+    self-heals across restarts since the id is persisted there."""
     if key := os.environ.get("A0_API_KEY"):
         return key
-    settings = json.loads(Path(cfg["a0_settings"]).read_text())
-    return settings["mcp_server_token"]
+    env = {}
+    for line in Path(cfg["a0_env"]).read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, _, v = line.partition("=")
+            env[k.strip()] = v.strip().strip('"').strip("'")
+    runtime_id = env.get("A0_PERSISTENT_RUNTIME_ID", "")
+    login = env.get("AUTH_LOGIN", "")
+    password = env.get("AUTH_PASSWORD", "")
+    digest = hashlib.sha256(f"{runtime_id}:{login}:{password}".encode()).digest()
+    return base64.urlsafe_b64encode(digest).decode().replace("=", "")[:16]
 
 
 def load_state(path):

@@ -5,7 +5,7 @@
     "duketopceo/Pace-Server"
   ],
   "a0_url": "http://localhost:5000",
-  "a0_settings": "/home/khan/agent-zero/usr/settings.json",
+  "a0_env": "/home/khan/agent-zero/usr/.env",
   "state_file": "~/.local/state/a0-pr-watch/state.json",
   "post": true,
   "skip_authors": ["dependabot[bot]", "renovate[bot]"],

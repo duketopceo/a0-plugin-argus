@@ -30,7 +30,7 @@ python3 a0_pr_watch.py --seed
 |---|---|---|
 | `repos` | `[]` | `owner/repo` strings or `{"name", "post"}` objects |
 | `a0_url` | `http://localhost:5000` | A0 base URL (loopback on the host) |
-| `a0_settings` | `…/usr/settings.json` | Source of `mcp_server_token` (the `X-API-KEY`) |
+| `a0_env` | `…/usr/.env` | Source of `A0_PERSISTENT_RUNTIME_ID` + `AUTH_LOGIN`/`AUTH_PASSWORD` — the watcher derives the `X-API-KEY` token exactly like A0's `create_auth_token` (self-heals across restarts). `A0_API_KEY` env var overrides |
 | `state_file` | `~/.local/state/a0-pr-watch/state.json` | head-SHA dedup + shared `context_id` |
 | `post` | `true` | Ask A0 to post the sticky comment |
 | `skip_authors` | `[]` | Author logins that never trigger (e.g. `dependabot[bot]`); their SHAs are still recorded so re-pushes are free |
