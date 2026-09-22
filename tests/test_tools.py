@@ -176,7 +176,7 @@ def test_flow_missing_playwright(monkeypatch, tmp_path):
     _trusted(monkeypatch)
     monkeypatch.setattr(
         runtime, "read_probe_cache",
-        lambda: {"node_ok": True, "playwright_ok": False, "playwright_note": "none"},
+        lambda: {"node_ok": True, "playwright": False},
     )
     called = []
     monkeypatch.setattr(A, "resolve_cli", lambda *a, **k: called.append(1) or FAKE_CLI)

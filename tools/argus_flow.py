@@ -51,10 +51,9 @@ class ArgusFlow(Tool):
                 )
 
             probe = runtime.read_probe_cache()
-            if probe and not probe.get("playwright_ok"):
+            if probe and not probe.get("playwright"):
                 return self._fail(
-                    "Playwright browsers are not installed in this A0 environment "
-                    f"(install probe: {probe.get('playwright_note', 'missing')}). "
+                    "Playwright browsers are not installed in this A0 environment. "
                     "Run `npx playwright install chromium` on the A0 host."
                 )
 
