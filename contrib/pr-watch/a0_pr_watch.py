@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
     "a0_settings": "/home/khan/agent-zero/usr/settings.json",
     "state_file": "~/.local/state/a0-pr-watch/state.json",
     "post": True,
+    "skip_authors": [],
     "max_triggers_per_run": 8,
     "project_name": "",
     "lifetime_hours": 24,
@@ -118,6 +119,11 @@ def main():
             pr_key = f"{name}#{pr['number']}"
             head = pr["headRefOid"]
             if state["prs"].get(pr_key) == head:
+                continue
+            # Record skipped authors so re-pushes don't re-evaluate forever;
+            # they simply never trigger.
+            if pr["author"]["login"] in cfg["skip_authors"]:
+                state["prs"][pr_key] = head
                 continue
             if args.seed:
                 state["prs"][pr_key] = head

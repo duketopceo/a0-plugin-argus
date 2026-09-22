@@ -8,6 +8,7 @@
   "a0_settings": "/home/khan/agent-zero/usr/settings.json",
   "state_file": "~/.local/state/a0-pr-watch/state.json",
   "post": true,
+  "skip_authors": ["dependabot[bot]", "renovate[bot]"],
   "max_triggers_per_run": 8,
   "project_name": "",
   "lifetime_hours": 24

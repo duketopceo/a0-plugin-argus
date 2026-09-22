@@ -33,5 +33,6 @@ python3 a0_pr_watch.py --seed
 | `a0_settings` | `…/usr/settings.json` | Source of `mcp_server_token` (the `X-API-KEY`) |
 | `state_file` | `~/.local/state/a0-pr-watch/state.json` | head-SHA dedup + shared `context_id` |
 | `post` | `true` | Ask A0 to post the sticky comment |
+| `skip_authors` | `[]` | Author logins that never trigger (e.g. `dependabot[bot]`); their SHAs are still recorded so re-pushes are free |
 | `max_triggers_per_run` | `8` | Burst cap — overflow retries next poll (SHAs are recorded only after a successful POST) |
 | `lifetime_hours` | `24` | A0 message lifetime |
