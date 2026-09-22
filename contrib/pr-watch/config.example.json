@@ -1,0 +1,14 @@
+{
+  "repos": [
+    "duketopceo/kurultai",
+    "duketopceo/dayflow-linux",
+    "duketopceo/Pace-Server"
+  ],
+  "a0_url": "http://localhost:5000",
+  "a0_settings": "/home/khan/agent-zero/usr/settings.json",
+  "state_file": "~/.local/state/a0-pr-watch/state.json",
+  "post": true,
+  "max_triggers_per_run": 8,
+  "project_name": "",
+  "lifetime_hours": 24
+}
