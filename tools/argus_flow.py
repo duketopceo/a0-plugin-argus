@@ -1,10 +1,12 @@
 import re
+from typing import Optional
 from urllib.parse import urlparse
 
 from helpers.tool import Tool, Response
 
 from usr.plugins.argus.helpers import argus as A
 from usr.plugins.argus.helpers import runtime
+from usr.plugins.argus.helpers.runtime import ProbeResult
 
 _URL_USERINFO = re.compile(r"^https?://[^/@\s]+@")
 
@@ -50,10 +52,13 @@ class ArgusFlow(Tool):
                     f"`{or_name}` is not set in the A0 host environment."
                 )
 
-            probe = runtime.read_probe_cache()
-            if probe and not probe.get("playwright"):
+            # Probe schema is shared with helpers/runtime.py (ProbeResult):
+            # "playwright_ok" means a real browser cache was seen on this host.
+            probe: Optional[ProbeResult] = runtime.read_probe_cache()
+            if probe is not None and not probe.get("playwright_ok"):
                 return self._fail(
-                    "Playwright browsers are not installed in this A0 environment. "
+                    "Playwright browsers are not installed in this A0 environment "
+                    f"(install probe: {probe.get('playwright_note') or 'missing'}). "
                     "Run `npx playwright install chromium` on the A0 host."
                 )
 

@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional, TypedDict
 
 PLUGIN_DIR = Path(__file__).resolve().parents[1]
 PROBE_CACHE = PLUGIN_DIR / "helpers" / "probe-cache.json"
@@ -21,6 +22,37 @@ MIN_NODE = (20, 19)
 
 _PROBE_TIMEOUT_S = 3
 _VENDOR_TIMEOUT_S = 180
+
+
+class ProbeResult(TypedDict):
+    """Capability matrix written by probe()/install_dependencies() and read
+    back by tools via read_probe_cache(). Writer and readers must use these
+    exact keys — see tools/argus_flow.py."""
+
+    node: bool
+    node_version: Optional[str]
+    node_ok: bool
+    npm: bool
+    npx: bool
+    git: bool
+    playwright_ok: bool
+    playwright_note: Optional[str]
+    vendored: bool
+    vendor_error: Optional[str]
+
+
+_PROBE_DEFAULTS: ProbeResult = {
+    "node": False,
+    "node_version": None,
+    "node_ok": False,
+    "npm": False,
+    "npx": False,
+    "git": False,
+    "playwright_ok": False,
+    "playwright_note": None,
+    "vendored": False,
+    "vendor_error": None,
+}
 
 
 def _run(cmd, timeout=_PROBE_TIMEOUT_S, env=None):
@@ -49,25 +81,32 @@ def _node_version():
         return None
 
 
-def _playwright_cache_present():
+def _playwright_probe():
+    """Check the Playwright browser cache. Returns (ok, note) where the note
+    names the cache location found, or what was checked when missing."""
     home = Path.home()
     for rel in (".cache/ms-playwright", "Library/Caches/ms-playwright"):
         d = home / rel
         if d.is_dir() and any(d.iterdir()):
-            return True
-    return False
+            return True, f"browser cache present at {d}"
+    return (
+        False,
+        f"no browser cache under {home / '.cache/ms-playwright'} "
+        "or ~/Library/Caches/ms-playwright",
+    )
 
 
 def probe(argus_version_pin=""):
     """Capability matrix — never raises."""
-    result = {
+    result: ProbeResult = {
         "node": False,
         "node_version": None,
         "node_ok": False,
         "npm": False,
         "npx": False,
         "git": False,
-        "playwright": False,
+        "playwright_ok": False,
+        "playwright_note": None,
         "vendored": False,
         "vendor_error": None,
     }
@@ -79,7 +118,9 @@ def probe(argus_version_pin=""):
     result["npm"] = _run(["npm", "--version"])[0] == 0
     result["npx"] = _run(["npx", "--version"])[0] == 0
     result["git"] = _run(["git", "--version"])[0] == 0
-    result["playwright"] = _playwright_cache_present()
+    ok, note = _playwright_probe()
+    result["playwright_ok"] = ok
+    result["playwright_note"] = note
 
     if result["node_ok"] and result["npm"]:
         ok, err = _vendor(argus_version_pin)
@@ -125,10 +166,21 @@ def _vendor(pin):
 
 
 def read_probe_cache():
+    """Read the cached ProbeResult. Caches written before the shared schema
+    used a bare "playwright" bool — map it to "playwright_ok" so old caches
+    still validate."""
     try:
-        return json.loads(PROBE_CACHE.read_text())
+        raw = json.loads(PROBE_CACHE.read_text())
     except (OSError, json.JSONDecodeError):
         return None
+    if not isinstance(raw, dict):
+        return None
+    data = dict(_PROBE_DEFAULTS)
+    data.update(raw)
+    if "playwright_ok" not in raw and "playwright" in raw:
+        data["playwright_ok"] = bool(raw["playwright"])
+    data.pop("playwright", None)
+    return data
 
 
 def write_probe_cache(data):

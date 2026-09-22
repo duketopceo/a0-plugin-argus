@@ -183,3 +183,79 @@ def test_flow_missing_playwright(monkeypatch, tmp_path):
     res = run(_tool(ArgusFlow).execute(
         checkout=str(tmp_path), url="https://app.example"))
     assert "Playwright" in res.message and not called
+
+
+def _fake_home_with_browser(monkeypatch, tmp_path, present=True):
+    """Fake $HOME for the real probe: optionally plant a Playwright cache."""
+    home = tmp_path / "home"
+    home.mkdir()
+    if present:
+        cache = home / ".cache" / "ms-playwright" / "chromium-1194"
+        cache.mkdir(parents=True)
+        (cache / "chrome-linux").write_text("fake-browser")
+    monkeypatch.setenv("HOME", str(home))
+    return home
+
+
+def _write_real_probe(monkeypatch, tmp_path, browser_present):
+    """Run the REAL runtime.probe(), write it to a tmp probe cache, and point
+    read_probe_cache() at it. Only the environment (HOME) and the network
+    side-effect (_vendor) are faked."""
+    _fake_home_with_browser(monkeypatch, tmp_path, present=browser_present)
+    monkeypatch.setattr(runtime, "_vendor", lambda pin="": (True, None))
+    cache_file = tmp_path / "probe-cache.json"
+    monkeypatch.setattr(runtime, "PROBE_CACHE", cache_file)
+    result = runtime.probe()
+    runtime.write_probe_cache(result)
+    return result
+
+
+def test_flow_real_probe_playwright_present_passes_preflight(monkeypatch, tmp_path):
+    """End-to-end schema contract: real probe sees a browser cache, writes the
+    cache, and the flow preflight lets the run through."""
+    _tokens(monkeypatch)
+    _trusted(monkeypatch)
+    result = _write_real_probe(monkeypatch, tmp_path, browser_present=True)
+    assert result["playwright_ok"] is True
+    assert "browser cache present at" in (result["playwright_note"] or "")
+    # writer and reader agree on the shared schema keys
+    assert set(result) == set(runtime.ProbeResult.__annotations__)
+
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_RUN_JSON": (FIXTURES / "run.json").read_text()
+    })
+    res = run(_tool(ArgusFlow).execute(
+        checkout=str(tmp_path), url="https://app.example"))
+    assert "Playwright browsers are not installed" not in res.message
+    assert "2/3 passed" in res.message
+
+
+def test_flow_real_probe_playwright_missing_message(monkeypatch, tmp_path):
+    """Explicit missing-browser path: real probe with no cache on disk fails
+    the preflight with an actionable message before touching the CLI."""
+    _tokens(monkeypatch)
+    _trusted(monkeypatch)
+    result = _write_real_probe(monkeypatch, tmp_path, browser_present=False)
+    assert result["playwright_ok"] is False
+
+    called = []
+    monkeypatch.setattr(A, "resolve_cli", lambda *a, **k: called.append(1) or FAKE_CLI)
+    res = run(_tool(ArgusFlow).execute(
+        checkout=str(tmp_path), url="https://app.example"))
+    assert "Playwright browsers are not installed" in res.message
+    assert "npx playwright install chromium" in res.message
+    # the probe note explains what was checked, not just "missing"
+    assert "no browser cache under" in res.message
+    assert not called
+
+
+def test_read_probe_cache_normalizes_legacy_schema(monkeypatch, tmp_path):
+    """Caches written before the shared schema used a bare "playwright" bool;
+    they still validate as playwright_ok."""
+    cache_file = tmp_path / "probe-cache.json"
+    cache_file.write_text(json.dumps({"node_ok": True, "playwright": True}))
+    monkeypatch.setattr(runtime, "PROBE_CACHE", cache_file)
+    probe = runtime.read_probe_cache()
+    assert probe is not None
+    assert probe["playwright_ok"] is True
+    assert set(probe) == set(runtime.ProbeResult.__annotations__)
