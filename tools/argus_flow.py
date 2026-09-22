@@ -69,9 +69,12 @@ class ArgusFlow(Tool):
             if str(pattern).strip():
                 argv.append(str(pattern).strip())
             argv += ["--report-dir", report_dir, "--url", url]
+            # No ARGUS_UNTRUSTED overlay: trust_checkout is the gate, and an
+            # untrusted child would ignore the checkout's .ts config — silently
+            # dropping pageSetup (auth seeding), cacheDir, and every other
+            # config the flow depends on.
             overlays = {
                 "OPENROUTER_API_KEY": or_key,
-                "ARGUS_UNTRUSTED": "1",
             }
             if str(settings.get("flow_budget_usd") or "").strip():
                 overlays["ARGUS_BUDGET_USD"] = str(
