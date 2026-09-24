@@ -176,10 +176,9 @@ def read_probe_cache():
     if not isinstance(raw, dict):
         return None
     data = dict(_PROBE_DEFAULTS)
-    data.update(raw)
+    data.update({key: raw[key] for key in _PROBE_DEFAULTS if key in raw})
     if "playwright_ok" not in raw and "playwright" in raw:
         data["playwright_ok"] = bool(raw["playwright"])
-    data.pop("playwright", None)
     return data
 
 
