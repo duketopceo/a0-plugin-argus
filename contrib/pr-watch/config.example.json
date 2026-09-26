@@ -11,5 +11,7 @@
   "skip_authors": ["dependabot[bot]", "renovate[bot]"],
   "max_triggers_per_run": 8,
   "project_name": "",
-  "lifetime_hours": 24
+  "lifetime_hours": 24,
+  "debounce_seconds": 900,
+  "max_debounce_seconds": 3600
 }
