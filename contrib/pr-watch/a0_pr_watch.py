@@ -46,6 +46,10 @@ DEFAULT_CONFIG = {
     # Hard cap on pending age — fires even mid-storm once this elapses.
     "max_debounce_seconds": 3600,
     # 0 disables debounce entirely (fire on first sight, as before).
+    # Skip draft PRs — agents iterate on drafts; review when marked ready.
+    "skip_drafts": True,
+    # Hard daily cap on reviews across all repos — bounds model spend.
+    "daily_trigger_cap": 30,
 }
 
 
@@ -83,13 +87,14 @@ def load_state(path):
     state.setdefault("prs", {})
     state.setdefault("pending", {})
     state.setdefault("contexts", {})
+    state.setdefault("daily", {})
     return state
 
 
 def open_prs(repo):
     out = subprocess.run(
         ["gh", "pr", "list", "--repo", repo, "--state", "open",
-         "--json", "number,headRefOid,title,author", "--limit", "50"],
+         "--json", "number,headRefOid,title,author,isDraft", "--limit", "50"],
         capture_output=True, text=True, timeout=60,
     )
     if out.returncode != 0:
@@ -166,6 +171,11 @@ def main():
                 state["prs"][pr_key] = head
                 state["pending"].pop(pr_key, None)
                 continue
+            # Drafts are where agents iterate — review once marked ready,
+            # not on every in-progress push.
+            if cfg["skip_drafts"] and pr.get("isDraft"):
+                state["pending"].pop(pr_key, None)
+                continue
             if args.seed:
                 state["prs"][pr_key] = head
                 continue
@@ -191,6 +201,10 @@ def main():
 
             if triggered >= cfg["max_triggers_per_run"]:
                 continue  # stays pending — retried next poll
+            today = time.strftime("%Y-%m-%d", time.gmtime(now))
+            daily = state["daily"].setdefault(today, 0)
+            if daily >= int(cfg["daily_trigger_cap"]):
+                continue  # stays pending — retried tomorrow
             msg = (
                 f"PR push detected: {pr_key} — \"{pr['title']}\" "
                 f"(head {sha8}, author {pr['author']['login']}). "
@@ -202,6 +216,7 @@ def main():
                 resp = post_message(cfg, key, msg, state["contexts"].get(pr_key))
                 state["prs"][pr_key] = head  # only after a successful trigger
                 state["pending"].pop(pr_key, None)
+                state["daily"][today] = daily + 1
                 if isinstance(resp, dict) and resp.get("context_id"):
                     state["contexts"][pr_key] = resp["context_id"]
                 triggered += 1
@@ -217,6 +232,11 @@ def main():
         for k in list(state["contexts"]):
             if k.startswith(f"{name}#") and k not in open_keys:
                 state["contexts"].pop(k)
+
+    # Keep only the last few days of daily counters.
+    if len(state["daily"]) > 7:
+        for k in sorted(state["daily"])[:-7]:
+            state["daily"].pop(k)
 
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(state, indent=2) + "\n")

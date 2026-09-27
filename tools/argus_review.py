@@ -67,6 +67,8 @@ class ArgusReview(Tool):
                     # Forward-compatible: newer argus releases honor this to keep
                     # checkout-controlled config code out of the review process.
                     "ARGUS_UNTRUSTED": "1",
+                    # Per-review spend cap (USD) — None removes the key.
+                    "ARGUS_BUDGET_USD": settings.get("review_budget_usd") or None,
                 }
             )
             res = await A.run_argus(

@@ -24,6 +24,11 @@ trust_checkout: false
 review_timeout_s: 1200
 flow_timeout_s: 1800
 
+# Per-review model spend cap in USD, exported to the child as
+# ARGUS_BUDGET_USD. Empty = uncapped. Keeps a push-storm from silently
+# turning into a runaway bill.
+review_budget_usd: ""
+
 # npm version spec vendored at plugin install. Pinned by default — the
 # report-schema parsing is asserted against this version; bump deliberately.
 # Empty = latest.
