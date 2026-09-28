@@ -81,6 +81,45 @@ def test_review_post_true_posts(monkeypatch):
     assert "posted" in res.message
 
 
+def test_review_post_true_posts_review_after_sticky(monkeypatch):
+    _tokens(monkeypatch)
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_REVIEW_JSON": (FIXTURES / "code-review.json").read_text()
+    })
+    pr_payload = {"number": 7, "head": {"sha": "headsha"},
+                  "base": {"repo": {"name": "repo", "owner": {"login": "owner"}}}}
+    monkeypatch.setattr(A, "preflight_pr", lambda *a: pr_payload)
+    calls = []
+    monkeypatch.setattr(
+        A, "post_sticky",
+        lambda *a: calls.append("sticky") or ("https://x/1", "created"))
+    monkeypatch.setattr(
+        A, "post_review",
+        lambda report, pr, token: calls.append(("review", pr, token))
+        or {"status": "skipped", "reason": "old report"})
+    res = run(_tool(ArgusReview).execute(pr="owner/repo#7", post="true"))
+    # sticky first — the review is additive and posts with the comment token
+    assert calls == ["sticky", ("review", pr_payload, "gh-tok")]
+    assert "review skipped: old report" in res.message
+
+
+def test_review_post_review_failure_keeps_sticky_result(monkeypatch):
+    _tokens(monkeypatch)
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_REVIEW_JSON": (FIXTURES / "code-review.json").read_text()
+    })
+
+    def boom(report, pr, token):
+        raise A.ArgusError("network error reaching api.github.com: down")
+
+    monkeypatch.setattr(A, "post_sticky", lambda *a: ("https://x/1", "created"))
+    monkeypatch.setattr(A, "post_review", boom)
+    res = run(_tool(ArgusReview).execute(pr="owner/repo#7", post="true"))
+    assert not res.message.startswith("argus_review:")
+    assert "posted (created)" in res.message
+    assert "review post failed: network error" in res.message
+
+
 def test_review_post_without_comment_token_fails_early(monkeypatch):
     _tokens(monkeypatch)
     monkeypatch.setenv("MISSING_COMMENT_TOKEN", "")

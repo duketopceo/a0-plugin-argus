@@ -29,7 +29,7 @@ part of an unrelated change.
 | `plugin.yaml` | Plugin manifest — `name: argus`, `settings_sections: [external]`. Renaming the plugin id breaks A0's `usr/plugins/<name>` install path. |
 | `hooks.py` | A0 lifecycle: `install()` probes the env and vendors the CLI, `uninstall()` removes it. Never raises — a host without node records the gap in the probe cache instead. |
 | `tools/argus_review.py`, `tools/argus_flow.py` | The two A0 tools. They `from helpers.tool import ...`; the framework supplies that. |
-| `helpers/argus.py` | CLI invocation, scratch-dir and `git archive` copy handling, comment sanitising. |
+| `helpers/argus.py` | CLI invocation, scratch-dir and `git archive` copy handling, comment sanitising, the sticky + batched-review post lanes (`post_review` ports `action/sticky-comment.cjs` — keep in lockstep). |
 | `helpers/runtime.py` | Install-time probe cache and npm vendoring. |
 | `prompts/agent.system.tool.argus_*.md` | Tool prompts. |
 | `contrib/pr-watch/` | Optional watcher that triggers reviews on PR push. Separate entry point, not loaded by the plugin. |
@@ -46,8 +46,10 @@ part of an unrelated change.
 - **`default_config.yaml` holds env-var *names* and policy, never values.**
   Adding a real key there is a credential leak.
 - **`argus_version_pin: "0.2.0"` is deliberate.** Report-schema parsing is
-  asserted against that version. Bump it in its own commit with the test
-  change, not incidentally.
+  asserted against that version. Bump to `"0.3.0"` (first release with
+  `reviewEvent`/`reviewComments`/`headBinding`, consumed by `post_review`)
+  in its own commit with the test change — and only after 0.3.0 is
+  published, or fresh installs fail vendoring.
 - **Tests must stay offline.** No network, no API key, no node. Extend
   `tests/fakebin/fake_cli.py` instead of invoking the real CLI.
 

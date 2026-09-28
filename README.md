@@ -6,7 +6,9 @@ tools backed by [Argus](https://github.com/duketopceo/Argus)
 
 - **`argus_review`** — reviews a GitHub pull request with a code/vision model and
   narrates the verdict, findings, model, tokens, and cost into the conversation.
-  Optionally posts (or updates) a single sticky comment on the PR.
+  Optionally posts (or updates) a sticky comment on the PR plus one batched
+  inline review — per-line comments with committable suggestions, escalating
+  to `REQUEST_CHANGES` only for proven blockers.
 - **`argus_flow`** — replays recorded Argus flows against an explicit URL inside
   a checkout you trust, and narrates pass/fail with failure messages.
 
@@ -23,7 +25,7 @@ In the **A0 tool environment** (the container/host where A0 executes tools):
 | `node >= 20.19.0` | The vendored argus CLI's engine floor |
 | `npm` | Used once at plugin install to vendor `argus-reviewer-e2e` |
 | `git` | PR context copies (`git archive`), bare-PR-number remote lookup |
-| `GITHUB_TOKEN` | Read the PR + diff via the GitHub API (see scopes below) |
+| `GITHUB_TOKEN` | Read the PR + diff via the GitHub API; with `post:"true"` also posts the sticky + review (see scopes below) |
 | `OPENROUTER_API_KEY` | BYOK model spend for the review model |
 | Playwright browsers | `argus_flow` only — `npx playwright install chromium` on the host |
 
@@ -61,13 +63,15 @@ works when your token already lives in the secrets store.
 ### GitHub token — fine-grained PAT (recommended)
 
 - **Repository access:** the repos you'll review.
-- **Permissions:** `Pull requests: Read`, `Contents: Read`, and
-  `Issues: Read and Write` (the last only if you'll use `post:"true"`).
+- **Permissions:** `Pull requests: Read` and `Contents: Read`; with
+  `post:"true"` also `Issues: Read and Write` (sticky comment) and
+  `Pull requests: Read and Write` (batched inline review — the token can then
+  post blocking `REQUEST_CHANGES` reviews and dismiss its own stale ones).
 
 ### GitHub token — classic PAT (alternative)
 
-- `public_repo` for public repos; `repo` for private. Same token covers reading
-  and sticky-comment posting.
+- `public_repo` for public repos; `repo` for private. Same token covers reading,
+  sticky-comment posting, and review posting.
 
 ### OpenRouter key
 
@@ -75,7 +79,7 @@ works when your token already lives in the secrets store.
   the fact, and in v0.1 only `argus_flow` spend is capped by a plugin setting.
 
 If posting should use a *different* token than reading, set `comment_token_env`
-to a second variable name holding an Issues-capable token.
+to a second variable name holding an Issues + Pull-requests-capable token.
 
 ## Settings
 
@@ -90,7 +94,7 @@ Values are env-var **names** and policy only — never secret values.
 | `trust_checkout` | `false` | Gates `argus_flow` and the review trust path (cwd + CLI resolution) — see Security model |
 | `review_timeout_s` | `1200` | Wall-clock cap per review |
 | `flow_timeout_s` | `1800` | Wall-clock cap per flow run |
-| `argus_version_pin` | `"0.2.0"` | npm spec vendored at install; empty = latest |
+| `argus_version_pin` | `"0.3.0"` | npm spec vendored at install; empty = latest |
 | `flow_budget_usd` | `""` | USD cap injected as `ARGUS_BUDGET_USD` for `argus_flow` only |
 | `default_checkout` | `""` | Fallback checkout path for both tools |
 
@@ -126,6 +130,16 @@ github.com remote. github.com only.
 Posting upserts one comment per PR — run it twice, the same comment updates.
 The comment shares the `<!-- argus-reviewer -->` sentinel with the Argus GitHub
 Action, so plugin-posted and CI-posted reviews never duplicate each other.
+
+With `post:"true"` the plugin also posts the serialized review surface from
+`code-review.json` as **one batched PR review**: per-line inline comments
+(suggestion blocks included, committable from the UI), deduplicated against
+what's already posted and validated against the live PR diff. The review event
+comes from the report — `REQUEST_CHANGES` only when Argus marked blockers as
+proven; on an own-PR/permission rejection it downgrades to `COMMENT` with a
+note, and the plugin dismisses its own stale `CHANGES_REQUESTED` reviews
+before reposting. When the vendored argus is older than 0.3.0 (no serialized
+surface), posting degrades to sticky-only.
 
 **Replay flows (requires `trust_checkout: true` + explicit url):**
 
@@ -173,7 +187,14 @@ credential-bearing URLs are scrubbed from progress output. Git runs with
 **Public comments.** Sticky bodies carry a fixed *"automated review — verify
 findings before acting"* disclaimer, and model-controlled text is sanitized
 (pipes escaped, newlines flattened, cells capped) so a hostile PR can't write
-arbitrary instructions into a public comment.
+arbitrary instructions into a public comment. The review lane consumes only
+the CLI's sanitized `reviewComments[]` verbatim — the plugin renders no model
+text itself — and it refuses to post a review when the report's recorded head
+SHA doesn't match the live PR head, so a stale or planted report can't put
+committable suggestions or a blocking review on the wrong code. Stale-review
+dismissal is self-scoped: only reviews authored by the token's own login *and*
+carrying the sentinel (or an empty body) are dismissed — a human's
+`CHANGES_REQUESTED` is never touched.
 
 ## Troubleshooting
 
@@ -184,8 +205,9 @@ arbitrary instructions into a public comment.
 - **`Node.js is not available`** — A0's tool env has no node/npm (some hosted
   deployments). `argus_review` can't run there; this is an environment limit,
   not a plugin bug.
-- **403 when posting** — the comment token lacks `Issues: Read and Write`
-  (fine-grained) or `repo`/`public_repo` (classic).
+- **403 when posting** — the comment token lacks `Issues: Read and Write` or
+  `Pull requests: Read and Write` (fine-grained) or `repo`/`public_repo`
+  (classic).
 - **`no test files matched`** — `argus_flow` ran but the pattern/dir matched
   nothing; check `pattern` and the checkout's tests directory.
 - **Flow refuses to run** — `trust_checkout` is off (correct default) or
@@ -193,7 +215,8 @@ arbitrary instructions into a public comment.
 
 ## v0.1 limits
 
-- Sticky-comment posting only (no inline review comments, no commit status).
+- Batched inline reviews post with argus ≥ 0.3.0 vendored; older pins degrade
+  to sticky-only. No commit-status posting.
 - `argus_flow` is replay-only — recording is interactive/browser-heavy and
   deferred.
 - No local-diff review mode; review needs a real github.com PR.
