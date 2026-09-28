@@ -4,7 +4,8 @@ Everything the two Tool classes need that isn't A0-specific: PR
 normalization, settings merge, the allowlist child-env builder, the
 subprocess runner (process-group kill on every exit path), review-cwd
 preparation (scratch / git-archive copy / trusted real checkout), report
-parsers, and the GitHub sticky-comment post lane.
+parsers, and the GitHub post lanes (sticky-comment upsert + the serialized
+batched-review poster).
 
 Secrets travel via env only — never argv, never return values, never echoed
 in errors.
@@ -431,10 +432,11 @@ def _gh(method, url, token, body=None, timeout=30):
 
 
 def preflight_pr(owner, repo, number, token):
-    """Disambiguate 404/401/403 before spend. Returns None or raises ArgusError."""
-    status, _body, _h = _gh("GET", f"{GH_API}/repos/{owner}/{repo}/pulls/{number}", token)
+    """Disambiguate 404/401/403 before spend. Returns the PR payload dict on
+    success (post_review consumes its coordinates) or raises ArgusError."""
+    status, body, _h = _gh("GET", f"{GH_API}/repos/{owner}/{repo}/pulls/{number}", token)
     if status == 200:
-        return
+        return body if isinstance(body, dict) else None
     if status == 401:
         raise ArgusError("GitHub token is invalid or expired (401)")
     if status == 403:
@@ -554,11 +556,355 @@ def _raise_post_error(status, owner, repo):
     if status in (401, 403):
         raise ArgusError(
             f"can't comment on {owner}/{repo} ({status}) — the comment token needs "
-            "Issues read+write (classic: repo/public_repo scope)"
+            "Issues + Pull requests read+write (classic: repo/public_repo scope)"
         )
     if status == 404:
         raise ArgusError(f"can't comment on {owner}/{repo} (404) — repo or PR not visible to the token")
     raise ArgusError(f"GitHub comment failed ({status}) on {owner}/{repo}")
+
+
+# --------------------------------------------------------------------------
+# Review lane (KTD3 — the report carries a pre-rendered surface; this poster
+# renders nothing. It freshness-gates the report, dedups on the serialized
+# key, validates anchors against the live diff, dismisses stale self-reviews,
+# and POSTs one batched review on a bounded retry ladder. Ported from
+# action/sticky-comment.cjs — keep the two in lockstep.)
+# --------------------------------------------------------------------------
+
+_HUNK_RIGHT = re.compile(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+_SUGGESTION_FENCE = re.compile(r"\r?\n(`{4,})suggestion\r?\n([\s\S]*?)\r?\n\1")
+_DISMISS_MESSAGE = "Superseded by a newer argus-reviewer review."
+
+
+def _short_hash(s):
+    """djb2 → 8 hex chars over UTF-16 code units — matches shortHash() in
+    argus src/cli.ts byte-for-byte (JS strings index by code unit, so astral
+    chars hash as surrogate pairs). Dedup identity only, not a boundary."""
+    h = 5381
+    data = s.encode("utf-16-le", "surrogatepass")
+    for i in range(0, len(data), 2):
+        h = ((h << 5) + h + (data[i] | (data[i + 1] << 8))) & 0xFFFFFFFF
+    return f"{h:08x}"
+
+
+def _extract_suggestion(body):
+    """Pull the fenced ```suggestion``` block out of a posted comment body.
+    The CLI's fence is longest-backtick-run+1 (min 4), so a run of exactly the
+    fence's length can only appear as the closing fence — the backreference
+    is safe against interior ``` runs."""
+    m = _SUGGESTION_FENCE.search(body or "")
+    return m.group(2) if m else ""
+
+
+def _posted_dedup_key(comment):
+    """Reconstruct the serialized dedupKey for an already-posted review
+    comment: `path:line:bodyFirstLine:hash8(suggestion|'')` — identical to the
+    key the CLI serialized, so a corrected suggestion re-posts instead of
+    colliding."""
+    body = str(comment.get("body") or "")
+    first = body.split("\n", 1)[0]
+    return (
+        f"{comment.get('path')}:{comment.get('line')}:{first}:"
+        f"{_short_hash(_extract_suggestion(body))}"
+    )
+
+
+def _list_all(url, token):
+    """Every page of a GitHub list endpoint (100/page). -> list, or None on
+    non-200/non-list so callers degrade rather than post blind."""
+    out = []
+    page = 1
+    while True:
+        status, body, _h = _gh("GET", f"{url}?per_page=100&page={page}", token)
+        if status != 200 or not isinstance(body, list):
+            return None
+        out.extend(body)
+        if len(body) < 100:
+            return out
+        page += 1
+
+
+def list_review_comments(owner, repo, number, token):
+    return _list_all(f"{GH_API}/repos/{owner}/{repo}/pulls/{number}/comments", token)
+
+
+def list_pr_files(owner, repo, number, token):
+    return _list_all(f"{GH_API}/repos/{owner}/{repo}/pulls/{number}/files", token)
+
+
+def _right_side_lines(patch):
+    """RIGHT-side line numbers covered by a unified-diff patch. Every line in
+    a hunk's `+c,d` range is a valid anchor (context or added); `-` lines
+    aren't counted in `d`, so the range is contiguous."""
+    lines = set()
+    for m in _HUNK_RIGHT.finditer(patch):
+        start = int(m.group(1))
+        count = int(m.group(2)) if m.group(2) is not None else 1
+        lines.update(range(start, start + count))
+    return lines
+
+
+def _is_on_diff(comment, diff_lines):
+    """True when a serialized comment anchors inside the live diff — path in
+    the file list and `line` (plus `start_line` when present) on a RIGHT-side
+    hunk line. Files without a `patch` (large/binary) accept no comments."""
+    if not isinstance(comment, dict):
+        return False
+    valid = diff_lines.get(comment.get("path"))
+    if valid is None or comment.get("line") not in valid:
+        return False
+    start = comment.get("start_line")
+    return start is None or start in valid
+
+
+def _review_body(report, note=None):
+    """Verdict line + honest blocker counts (reproduced and p-gated are never
+    lumped). Always non-empty — REQUEST_CHANGES requires a body. Carries the
+    sentinel so stale-review dismissal can self-identify."""
+    parts = [f"verdict **{report.get('verdict') or 'unknown'}**"]
+    proven = report.get("provenBlockers") or 0
+    high = report.get("highConfidenceBlockers") or 0
+    if proven:
+        parts.append(f"⛔ {proven} reproduced blocker(s)")
+    if high:
+        parts.append(f"◎ {high} high-confidence blocker(s)")
+    body = f"{SENTINEL}\n**argus-reviewer** — {' · '.join(parts)}"
+    if note:
+        body += f"\n\n*{note}*"
+    return body
+
+
+def _token_login(token):
+    """The login this token posts as — self-identification for stale-review
+    dismissal (KTD5). None when the token can't resolve /user."""
+    status, body, _h = _gh("GET", f"{GH_API}/user", token)
+    if status == 200 and isinstance(body, dict):
+        login = body.get("login")
+        if isinstance(login, str) and login:
+            return login
+    return None
+
+
+def _pr_coords(pr):
+    """-> (owner, repo, number) from a pulls payload, or None."""
+    if not isinstance(pr, dict):
+        return None
+    base = (pr.get("base") or {}).get("repo") or {}
+    owner = pr.get("owner") or (base.get("owner") or {}).get("login")
+    repo = pr.get("repo") or base.get("name")
+    try:
+        number = int(pr.get("number"))
+    except (TypeError, ValueError):
+        return None
+    if not owner or not repo:
+        return None
+    return str(owner), str(repo), number
+
+
+def post_review(report, pr, token):
+    """Post the serialized review surface as one batched PR review.
+
+    Thin consumer — the CLI already eligibility-filtered, sanitized,
+    severity-sorted, capped, and keyed `reviewComments[]`; this does only the
+    post-time work: freshness (R9), dedup (R10), live-diff validation (R8),
+    stale self-review dismissal (KTD5), one POST with the serialized event,
+    and the bounded retry ladder (R4/KTD4, at most three POSTs).
+
+    -> None when the report has no serialized surface (a pre-0.3.0 report —
+    sticky-only by design), else a dict narrated by narrate_review():
+    `{status: 'posted'|'skipped'|'failed', ...}`. Never raises for API
+    failures — the sticky has already posted and a review failure must not
+    fail the tool.
+    """
+    if not isinstance(report, dict) or report.get("skipped"):
+        return None
+    serialized = report.get("reviewComments")
+    if not isinstance(serialized, list):
+        return None
+    coords = _pr_coords(pr)
+    if coords is None:
+        return {
+            "status": "skipped",
+            "reason": "PR coordinates unavailable — head SHA unverifiable",
+        }
+    owner, repo, number = coords
+    base_url = f"{GH_API}/repos/{owner}/{repo}/pulls/{number}"
+
+    # R9/KTD6 — re-resolve the head at post time (the preflight payload is
+    # stale by the length of the review). A planted or stale report must
+    # never produce committable suggestions or a blocking review.
+    status, fresh_pr, _h = _gh("GET", base_url, token)
+    head_sha = ((fresh_pr or {}).get("head") or {}).get("sha") if status == 200 else None
+    binding = report.get("headBinding")
+    intended = binding.get("intendedSha") if isinstance(binding, dict) else None
+    if not head_sha or intended != head_sha:
+        return {
+            "status": "skipped",
+            "reason": f"report head binding ({intended or 'missing'}) does not match "
+                      f"PR head ({head_sha or 'unresolved'})",
+        }
+
+    event = "REQUEST_CHANGES" if report.get("reviewEvent") == "request_changes" else "COMMENT"
+    overflow = report.get("commentsOverflow")
+    meta = {
+        "event": event,
+        "deduped": 0,
+        "dropped": 0,
+        "overflow": overflow if isinstance(overflow, int) else 0,
+        "dismissed": 0,
+        "warnings": [],
+    }
+
+    # R10 — paginate fully and scope to the current head so comments on older
+    # commits can't suppress still-valid findings. Keys are reconstructed from
+    # the posted body, so a corrected suggestion re-posts instead of colliding.
+    existing = list_review_comments(owner, repo, number, token)
+    if existing is None:
+        return {"status": "skipped",
+                "reason": "couldn't list existing review comments — review not posted"}
+    posted_keys = {
+        _posted_dedup_key(c)
+        for c in existing
+        if isinstance(c, dict)
+        and c.get("commit_id") == head_sha
+        and str(c.get("body") or "").startswith("**argus-reviewer")
+    }
+    fresh = [
+        c for c in serialized
+        if isinstance(c, dict) and c.get("dedupKey") not in posted_keys
+    ]
+    meta["deduped"] = len(serialized) - len(fresh)
+
+    # R8 — the diff is authoritative only at post time; drop anchors that
+    # aren't RIGHT-side lines in the current PR diff.
+    files = list_pr_files(owner, repo, number, token)
+    if files is None:
+        return {"status": "skipped",
+                "reason": "couldn't list PR files for diff validation — review not posted"}
+    diff_lines = {}
+    for f in files:
+        if isinstance(f, dict) and isinstance(f.get("patch"), str):
+            diff_lines[f.get("filename")] = _right_side_lines(f["patch"])
+    comments = [c for c in fresh if _is_on_diff(c, diff_lines)]
+    meta["dropped"] = len(fresh) - len(comments)
+
+    # KTD5 — dismiss stale self reviews so a fixed PR is never left gated by
+    # an obsolete REQUEST_CHANGES. Self = authored by the token's login AND
+    # (empty body or sentinel) — a foreign review posted under the same token
+    # is never dismissed. When /user can't resolve the login, dismissal is
+    # skipped outright: we can't tell our reviews from the Action's or a
+    # human's, and dismissing a stranger's gate is the wrong failure.
+    reviews = _list_all(f"{base_url}/reviews", token)
+    login = _token_login(token)
+    if reviews is None or login is None:
+        meta["warnings"].append("couldn't enumerate prior reviews — stale dismissal skipped")
+    else:
+        self_logins = {login, f"{login}[bot]"}
+        for r in reviews:
+            if not isinstance(r, dict):
+                continue
+            rbody = r.get("body")
+            stale = (
+                r.get("state") in ("CHANGES_REQUESTED", "PENDING")
+                and (r.get("user") or {}).get("login") in self_logins
+                and (not isinstance(rbody, str) or rbody == "" or SENTINEL in rbody)
+            )
+            if not stale:
+                continue
+            d_status, _p, _h = _gh(
+                "PUT",
+                f"{base_url}/reviews/{r.get('id')}/dismissals",
+                token,
+                {"message": _DISMISS_MESSAGE},
+            )
+            if d_status in (200, 201):
+                meta["dismissed"] += 1
+            else:
+                meta["warnings"].append(
+                    f"failed to dismiss stale review {r.get('id')} ({d_status})"
+                )
+
+    # A COMMENT review with nothing to say posts nothing — the sticky already
+    # carries the verdict. REQUEST_CHANGES posts even with zero comments: the
+    # gate intent must land.
+    if event != "REQUEST_CHANGES" and not comments:
+        return {"status": "skipped", "reason": "no new inline comments", **meta}
+
+    # KTD4 — (1) post the serialized event; (2) on 403/422 (own-PR,
+    # permissions) retry COMMENT with a downgrade note in the body; (3) on a
+    # comment-caused 422, drop anchors failing diff membership and retry.
+    # dedupKey is poster-local — the API gets path/line/side/body
+    # (+start_line/start_side) verbatim.
+    note = None
+    last_status = None
+    for attempt in range(3):
+        status, resp, _h = _gh(
+            "POST",
+            f"{base_url}/reviews",
+            token,
+            {
+                "commit_id": head_sha,
+                "event": event,
+                "body": _review_body(report, note),
+                "comments": [
+                    {k: v for k, v in c.items() if k != "dedupKey"} for c in comments
+                ],
+            },
+        )
+        if status in (200, 201):
+            return {
+                "status": "posted",
+                "url": (resp or {}).get("html_url", "") if isinstance(resp, dict) else "",
+                "comments": len(comments),
+                "note": note,
+                **meta,
+                "event": event,
+            }
+        last_status = status
+        if attempt == 0 and event == "REQUEST_CHANGES" and status in (403, 422):
+            event = "COMMENT"
+            note = f"REQUEST_CHANGES downgraded to COMMENT — {status}"
+            continue
+        if status == 422 and comments:
+            kept = [c for c in comments if _is_on_diff(c, diff_lines)]
+            if len(kept) < len(comments):
+                meta["dropped"] += len(comments) - len(kept)
+                comments = kept
+                continue
+        break
+    reason = f"review post failed ({last_status})"
+    if last_status in (401, 403):
+        reason = (
+            f"can't post a review on {owner}/{repo} ({last_status}) — the comment "
+            "token needs Pull requests read+write (classic: repo scope); it can "
+            "post blocking reviews"
+        )
+    return {"status": "failed", "reason": reason, **meta}
+
+
+def _review_line(result):
+    """One narration line for a post_review() result dict."""
+    status = result.get("status")
+    if status == "posted":
+        bits = [f"{result.get('comments', 0)} inline comment(s)"]
+        if result.get("deduped"):
+            bits.append(f"{result['deduped']} already posted")
+        if result.get("dropped"):
+            bits.append(f"{result['dropped']} off-diff dropped")
+        if result.get("overflow"):
+            bits.append(f"{result['overflow']} over cap")
+        if result.get("dismissed"):
+            bits.append(f"{result['dismissed']} stale review(s) dismissed")
+        line = f"review posted ({result.get('event', 'COMMENT')}): " + " · ".join(bits)
+        if result.get("note"):
+            line += f" — {result['note']}"
+    elif status == "skipped":
+        line = f"review skipped: {result.get('reason') or 'no reason recorded'}"
+    else:
+        line = f"review post failed: {result.get('reason') or 'unknown'}"
+    for w in result.get("warnings") or []:
+        line += f" (warning: {w})"
+    return line
 
 
 # --------------------------------------------------------------------------
@@ -591,8 +937,9 @@ def _sort_key(f):
     return (_SEV_ORDER.index(sev) if sev in _SEV_ORDER else len(_SEV_ORDER))
 
 
-def narrate_review(report, report_dir, posted=None, cwd_note=""):
-    """Compact narration block per KTD5 — fields-if-present."""
+def narrate_review(report, report_dir, posted=None, cwd_note="", review=None):
+    """Compact narration block per KTD5 — fields-if-present. `review` is the
+    post_review() result dict (None when the report had no review surface)."""
     if report is None:
         return f"argus code-review finished but wrote no report at {report_dir} — check the run output above."
     if report.get("skipped"):
@@ -651,6 +998,8 @@ def narrate_review(report, report_dir, posted=None, cwd_note=""):
     if posted:
         url, how = posted
         lines.append(f"posted ({how}): {url}")
+    if review:
+        lines.append(_review_line(review))
     return "\n".join(lines)
 
 

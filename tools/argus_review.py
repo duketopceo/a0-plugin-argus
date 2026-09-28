@@ -9,7 +9,9 @@ from usr.plugins.argus.helpers import runtime
 class ArgusReview(Tool):
     """Code-review a GitHub pull request with Argus and narrate the result.
 
-    Posts a sticky PR comment only when called with post=true.
+    Posts a sticky PR comment — and, when the vendored argus serializes a
+    review surface, one batched inline review — only when called with
+    post=true.
     """
 
     async def execute(self, checkout="", pr="", post="false", **_kwargs):
@@ -52,7 +54,7 @@ class ArgusReview(Tool):
                     "include argus-reviewer-e2e."
                 )
 
-            A.preflight_pr(owner, repo, number, gh_token)
+            pr_payload = A.preflight_pr(owner, repo, number, gh_token)
 
             cwd, cwd_note = A.prepare_review_cwd(checkout, trusted)
             report_dir = A.fresh_report_dir()
@@ -89,11 +91,20 @@ class ArgusReview(Tool):
                 )
 
             posted = None
+            review = None
             if post_flag and report is not None:
                 body = A.render_sticky_body(report)
                 posted = A.post_sticky(owner, repo, number, body, comment_token)
+                # Batched inline review after the sticky — a review failure
+                # must not fail the tool once the sticky has landed.
+                try:
+                    review = A.post_review(report, pr_payload, comment_token)
+                except A.ArgusError as e:
+                    review = {"status": "failed", "reason": str(e)}
 
-            msg = A.narrate_review(report, report_dir, posted=posted, cwd_note=cwd_note)
+            msg = A.narrate_review(
+                report, report_dir, posted=posted, cwd_note=cwd_note, review=review
+            )
             if report is None and res["tail"].strip():
                 msg += f"\n\nrun output tail:\n{res['tail'][-1500:]}"
             return Response(message=msg, break_loop=False)

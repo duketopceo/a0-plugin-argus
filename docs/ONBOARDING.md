@@ -26,7 +26,7 @@ of these work — values never go in `config.json`):
 | Needed for | Key |
 |---|---|
 | Model calls (review + flow) | `OPENROUTER_API_KEY` — one BYOK key covers all models |
-| PR preflight + sticky comments | A GitHub PAT with `repo` scope — any name, e.g. `PERSONAL_GITHUB_PAT` |
+| PR preflight + posting | A GitHub PAT — classic `repo` scope covers it; fine-grained needs `Contents` + `Pull requests` read, and for `post:"true"` also `Issues` + `Pull requests` read+write (the token can then post blocking `REQUEST_CHANGES` reviews). Any env name, e.g. `PERSONAL_GITHUB_PAT` |
 
 Set the A0 model to whatever you want reviews narrated by — Argus calls
 OpenRouter directly with its own model choice; the A0 chat model only needs
@@ -69,7 +69,8 @@ host PATH. Docker users can `docker exec agent-zero apt-get install -y nodejs np
 In the A0 chat: `review duketopceo/kurultai#363` — the agent calls
 `argus_review`, streams progress, narrates verdict/cost/findings. Add
 "post it" or the tool call's `post:true` to upsert the `<!-- argus-reviewer -->`
-sticky on the PR.
+sticky on the PR — and, with argus ≥ 0.3.0 vendored, one batched inline review
+(per-line comments + suggestions; `REQUEST_CHANGES` only for proven blockers).
 
 ## 6. Automatic reviews on PR push (optional)
 

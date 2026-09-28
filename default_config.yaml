@@ -31,6 +31,9 @@ review_budget_usd: ""
 
 # npm version spec vendored at plugin install. Pinned by default — the
 # report-schema parsing is asserted against this version; bump deliberately.
+# NOTE: bump to "0.3.0" in its own commit once argus-reviewer-e2e 0.3.0 is on
+# npm — that release serializes reviewEvent + reviewComments[] which
+# post_review consumes; pre-0.3.0 reports degrade to sticky-only.
 # Empty = latest.
 argus_version_pin: "0.2.0"
 
