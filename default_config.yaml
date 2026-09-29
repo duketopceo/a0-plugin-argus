@@ -43,3 +43,9 @@ flow_budget_usd: ""
 
 # Fallback checkout path when a tool call doesn't pass one. Empty = none.
 default_checkout: ""
+
+# OpenRouter model slug for the code-review model, exported to the child as
+# ARGUS_CODE_MODEL (requires argus >= 0.3.1; older vendored CLIs ignore it).
+# Empty = the CLI's built-in default. This is the only way to pick the review
+# model here — ARGUS_UNTRUSTED means checkout config never executes.
+code_model: ""

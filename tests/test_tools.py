@@ -228,6 +228,44 @@ def test_review_bare_number_uses_default_checkout_origin(monkeypatch):
     assert "report:" in res.message
 
 
+def _spy_env(monkeypatch):
+    """Capture the overlay dict passed to build_child_env (after _patch_run)."""
+    seen = {}
+    prev = A.build_child_env
+
+    def spy(overlays):
+        seen.update(overlays)
+        return prev(overlays)
+
+    monkeypatch.setattr(A, "build_child_env", spy)
+    return seen
+
+
+def test_review_forwards_code_model_setting(monkeypatch):
+    _tokens(monkeypatch)
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_REVIEW_JSON": (FIXTURES / "code-review.json").read_text()
+    })
+    settings = A.load_default_config()
+    settings["code_model"] = "acme/better-model"
+    monkeypatch.setattr(A, "resolve_settings", lambda agent=None: settings)
+    seen = _spy_env(monkeypatch)
+    res = run(_tool(ArgusReview).execute(pr="owner/repo#7"))
+    assert seen["ARGUS_CODE_MODEL"] == "acme/better-model"
+    assert "report:" in res.message
+
+
+def test_review_omits_code_model_when_unset(monkeypatch):
+    _tokens(monkeypatch)
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_REVIEW_JSON": (FIXTURES / "code-review.json").read_text()
+    })
+    seen = _spy_env(monkeypatch)
+    run(_tool(ArgusReview).execute(pr="owner/repo#7"))
+    # None removes the key — the vendored CLI falls back to its own default.
+    assert seen["ARGUS_CODE_MODEL"] is None
+
+
 # ------------------------------------------------------------------ flow ----
 
 def test_flow_refuses_without_trust(monkeypatch):
