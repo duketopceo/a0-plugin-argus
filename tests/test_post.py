@@ -469,4 +469,4 @@ def test_version_pin_tracks_serialized_review_schema():
     serializing reviewEvent/reviewComments/headBinding.intendedSha into
     code-review.json — the contract post_review consumes. Update this
     assertion with the pin."""
-    assert argus.load_default_config()["argus_version_pin"] == "0.3.0"
+    assert argus.load_default_config()["argus_version_pin"] == "0.3.1"
