@@ -37,8 +37,24 @@ class ArgusReview(Tool):
                     )
                 comment_token = ctok or gh_token
 
-            checkout = (checkout or settings.get("default_checkout") or "").strip() or None
+            checkout_arg = (checkout or "").strip() or None
+            checkout = (
+                checkout_arg or (settings.get("default_checkout") or "").strip() or None
+            )
             owner, repo, number = A.normalize_pr(pr, checkout=checkout)
+            # A default_checkout for a different repo would review the wrong
+            # tree — only an explicit checkout is trusted to cross repos.
+            mismatch_note = ""
+            if (
+                checkout_arg is None
+                and checkout is not None
+                and not A.checkout_matches_repo(checkout, owner, repo)
+            ):
+                mismatch_note = (
+                    f"; configured default_checkout '{checkout}' does not belong to "
+                    f"{owner}/{repo} — ignored for this PR"
+                )
+                checkout = None
 
             probe = runtime.read_probe_cache()
             if probe and not probe.get("node_ok"):
@@ -57,6 +73,7 @@ class ArgusReview(Tool):
             pr_payload = A.preflight_pr(owner, repo, number, gh_token)
 
             cwd, cwd_note = A.prepare_review_cwd(checkout, trusted)
+            cwd_note += mismatch_note
             report_dir = A.fresh_report_dir()
             env = A.build_child_env(
                 {
