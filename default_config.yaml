@@ -32,9 +32,10 @@ review_budget_usd: ""
 # npm version spec vendored at plugin install. Pinned by default — the
 # report-schema parsing is asserted against this version; bump deliberately.
 # 0.3.0 serializes reviewEvent + reviewComments[] into code-review.json —
-# the batched-review surface post_review consumes; older reports degrade
+# the batched-review surface post_review consumes; 0.3.1 adds
+# ARGUS_CODE_MODEL (the code_model setting below); older reports degrade
 # to sticky-only. Empty = latest.
-argus_version_pin: "0.3.0"
+argus_version_pin: "0.3.1"
 
 # USD cap injected as ARGUS_BUDGET_USD for argus_flow runs. Empty = uncapped.
 # NOTE: argus_review spend is NOT capped by this setting in v0.1 — review cost
