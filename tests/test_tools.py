@@ -155,6 +155,79 @@ def test_review_no_report_surfaces_tail(monkeypatch):
     assert "boom: something broke" in res.message
 
 
+def _capture_cwd(monkeypatch):
+    seen = {}
+
+    def fake_prep(checkout, trusted):
+        seen["checkout"] = checkout
+        return "/tmp", "fake-cwd"
+
+    monkeypatch.setattr(A, "prepare_review_cwd", fake_prep)
+    return seen
+
+
+def test_review_drops_default_checkout_of_other_repo(monkeypatch):
+    _tokens(monkeypatch)
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_REVIEW_JSON": (FIXTURES / "code-review.json").read_text()
+    })
+    settings = A.load_default_config()
+    settings["default_checkout"] = "/srv/kurultai"
+    monkeypatch.setattr(A, "resolve_settings", lambda agent=None: settings)
+    monkeypatch.setattr(A, "_repo_from_origin", lambda c: ("acme", "other-repo"))
+    seen = _capture_cwd(monkeypatch)
+    res = run(_tool(ArgusReview).execute(pr="owner/repo#7"))
+    # the default belongs to another repo — the review must run diff-only,
+    # not against the wrong tree
+    assert seen["checkout"] is None
+    assert "default_checkout" in res.message
+    assert "report:" in res.message
+
+
+def test_review_keeps_matching_default_checkout(monkeypatch):
+    _tokens(monkeypatch)
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_REVIEW_JSON": (FIXTURES / "code-review.json").read_text()
+    })
+    settings = A.load_default_config()
+    settings["default_checkout"] = "/srv/repo"
+    monkeypatch.setattr(A, "resolve_settings", lambda agent=None: settings)
+    monkeypatch.setattr(A, "_repo_from_origin", lambda c: ("Owner", "REPO"))
+    seen = _capture_cwd(monkeypatch)
+    res = run(_tool(ArgusReview).execute(pr="owner/repo#7"))
+    assert seen["checkout"] == "/srv/repo"
+    assert "report:" in res.message
+
+
+def test_review_explicit_checkout_kept_across_repos(monkeypatch):
+    _tokens(monkeypatch)
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_REVIEW_JSON": (FIXTURES / "code-review.json").read_text()
+    })
+    monkeypatch.setattr(A, "_repo_from_origin", lambda c: ("acme", "other-repo"))
+    seen = _capture_cwd(monkeypatch)
+    res = run(_tool(ArgusReview).execute(checkout="/explicit/path", pr="owner/repo#7"))
+    # an explicit checkout is the caller's choice — no repo-match gate
+    assert seen["checkout"] == "/explicit/path"
+
+
+def test_review_bare_number_uses_default_checkout_origin(monkeypatch):
+    _tokens(monkeypatch)
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_REVIEW_JSON": (FIXTURES / "code-review.json").read_text()
+    })
+    settings = A.load_default_config()
+    settings["default_checkout"] = "/srv/repo"
+    monkeypatch.setattr(A, "resolve_settings", lambda agent=None: settings)
+    monkeypatch.setattr(A, "_repo_from_origin", lambda c: ("owner", "repo"))
+    seen = _capture_cwd(monkeypatch)
+    res = run(_tool(ArgusReview).execute(pr="7"))
+    # bare numbers derive owner/repo from the checkout's origin — it matches
+    # by construction and stays in use
+    assert seen["checkout"] == "/srv/repo"
+    assert "report:" in res.message
+
+
 # ------------------------------------------------------------------ flow ----
 
 def test_flow_refuses_without_trust(monkeypatch):

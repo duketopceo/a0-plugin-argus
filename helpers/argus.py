@@ -159,6 +159,15 @@ def _repo_from_origin(checkout):
     return (m.group(1), m.group(2)) if m else None
 
 
+def checkout_matches_repo(checkout, owner, repo):
+    """True when checkout's origin remote resolves to owner/repo (case-insensitive)."""
+    origin = _repo_from_origin(checkout)
+    return origin is not None and (origin[0].lower(), origin[1].lower()) == (
+        owner.lower(),
+        repo.lower(),
+    )
+
+
 def normalize_pr(pr, checkout=None):
     """-> (owner, repo, number). Accepts a PR URL, o/r/pull/N, o/r#N, or a
     bare number (repo derived from the checkout's origin remote)."""

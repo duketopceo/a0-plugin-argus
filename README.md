@@ -96,7 +96,7 @@ Values are env-var **names** and policy only — never secret values.
 | `flow_timeout_s` | `1800` | Wall-clock cap per flow run |
 | `argus_version_pin` | `"0.3.0"` | npm spec vendored at install; empty = latest |
 | `flow_budget_usd` | `""` | USD cap injected as `ARGUS_BUDGET_USD` for `argus_flow` only |
-| `default_checkout` | `""` | Fallback checkout path for both tools |
+| `default_checkout` | `""` | Fallback checkout path for both tools; `argus_review` ignores it when its origin remote doesn't match the PR's repo |
 
 ## Usage
 
