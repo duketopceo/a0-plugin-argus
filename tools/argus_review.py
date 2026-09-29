@@ -88,6 +88,8 @@ class ArgusReview(Tool):
                     "ARGUS_UNTRUSTED": "1",
                     # Per-review spend cap (USD) — None removes the key.
                     "ARGUS_BUDGET_USD": settings.get("review_budget_usd") or None,
+                    # Operator-chosen review model — None removes the key.
+                    "ARGUS_CODE_MODEL": settings.get("code_model") or None,
                 }
             )
             res = await A.run_argus(
