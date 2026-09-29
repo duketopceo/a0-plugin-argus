@@ -45,11 +45,11 @@ part of an unrelated change.
   does under the test harness.
 - **`default_config.yaml` holds env-var *names* and policy, never values.**
   Adding a real key there is a credential leak.
-- **`argus_version_pin: "0.2.0"` is deliberate.** Report-schema parsing is
-  asserted against that version. Bump to `"0.3.0"` (first release with
-  `reviewEvent`/`reviewComments`/`headBinding`, consumed by `post_review`)
-  in its own commit with the test change — and only after 0.3.0 is
-  published, or fresh installs fail vendoring.
+- **`argus_version_pin: "0.3.0"` is deliberate.** Report-schema parsing and
+  the `post_review` surface (`reviewEvent`/`reviewComments`/`headBinding`)
+  are asserted against that version; older reports degrade to sticky-only.
+  Bump it in its own commit with the test change — and only after the
+  release is published, or fresh installs fail vendoring.
 - **Tests must stay offline.** No network, no API key, no node. Extend
   `tests/fakebin/fake_cli.py` instead of invoking the real CLI.
 

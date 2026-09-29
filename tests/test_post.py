@@ -467,7 +467,6 @@ def test_narrate_review_surfaces_skip_and_failure(tmp_path):
 def test_version_pin_tracks_serialized_review_schema():
     """Pin bumps are deliberate (AGENTS.md): 0.3.0 is the first argus release
     serializing reviewEvent/reviewComments/headBinding.intendedSha into
-    code-review.json — the contract post_review consumes. Held at 0.2.0
-    until 0.3.0 is published; fresh installs would fail vendoring otherwise.
-    Update this assertion with the pin."""
-    assert argus.load_default_config()["argus_version_pin"] == "0.2.0"
+    code-review.json — the contract post_review consumes. Update this
+    assertion with the pin."""
+    assert argus.load_default_config()["argus_version_pin"] == "0.3.0"
