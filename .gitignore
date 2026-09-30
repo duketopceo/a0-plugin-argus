@@ -10,3 +10,6 @@ package-lock.json
 
 # Test scratch
 tests/fixtures/tmp/
+
+# codebase-memory-mcp local index cache
+.codebase-memory/
