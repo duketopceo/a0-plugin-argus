@@ -92,14 +92,28 @@ class ArgusReview(Tool):
                     "ARGUS_CODE_MODEL": settings.get("code_model") or None,
                 }
             )
-            res = await A.run_argus(
-                [exe, "code-review", "--report-dir", report_dir],
-                cwd,
-                env,
-                timeout_s=A._bounded(settings.get("review_timeout_s"), 1, 14400, 1200),
-                on_line=lambda line: self.add_progress(line + "\n"),
-                abort_check=lambda: self.agent.handle_intervention(),
-            )
+            # Repo index first — without it every finding reports "no repo
+            # index" and the model guesses at symbol definitions. Skipped for
+            # an empty scratch cwd (no checkout): nothing to scan.
+            index_path = None
+            if checkout:
+                index_path = await A.build_review_index(
+                    exe, cwd, env,
+                    on_line=lambda line: self.add_progress(line + "\n"),
+                    abort_check=lambda: self.agent.handle_intervention(),
+                )
+            try:
+                res = await A.run_argus(
+                    [exe, "code-review", "--report-dir", report_dir],
+                    cwd,
+                    env,
+                    timeout_s=A._bounded(settings.get("review_timeout_s"), 1, 14400, 1200),
+                    on_line=lambda line: self.add_progress(line + "\n"),
+                    abort_check=lambda: self.agent.handle_intervention(),
+                )
+            finally:
+                if index_path is not None:
+                    A.drop_review_index(index_path)
             if res["spawn_error"]:
                 return self._fail(f"could not start argus: {res['spawn_error']}")
             report = A.parse_review_report(report_dir)

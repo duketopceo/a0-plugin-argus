@@ -3,6 +3,8 @@
   ARGUS_FAKE_SLEEP   — seconds to sleep before acting (timeout tests)
   ARGUS_FAKE_EXIT    — exit code (default 0)
   ARGUS_FAKE_STDERR  — text to print to stderr
+  ARGUS_FAKE_CALLS   — file to append each invoked subcommand to
+  ARGUS_FAKE_INDEX_FAIL — `index` exits 1 instead of writing argus.index.json
 Writes tests/fixtures-style JSON into --report-dir.
 """
 
@@ -23,7 +25,15 @@ def main():
     if "--report-dir" in args:
         report_dir = args[args.index("--report-dir") + 1]
     cmd = args[0] if args else ""
-    if cmd == "code-review":
+    if os.environ.get("ARGUS_FAKE_CALLS"):
+        with open(os.environ["ARGUS_FAKE_CALLS"], "a") as f:
+            f.write(cmd + "\n")
+    if cmd == "index":
+        if os.environ.get("ARGUS_FAKE_INDEX_FAIL"):
+            sys.exit(1)
+        with open("argus.index.json", "w") as f:
+            json.dump({"files": {}}, f)
+    elif cmd == "code-review":
         with open(os.path.join(report_dir, "code-review.json"), "w") as f:
             json.dump(json.loads(os.environ.get("ARGUS_FAKE_REVIEW_JSON", "{}")), f)
     elif cmd == "run":

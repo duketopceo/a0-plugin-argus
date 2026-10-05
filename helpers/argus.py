@@ -395,6 +395,40 @@ def fresh_report_dir():
     return tempfile.mkdtemp(prefix="argus-report-")
 
 
+INDEX_FILENAME = "argus.index.json"
+# Whole-repo scan; bounded so a wedged scan can't eat the review timeout.
+INDEX_TIMEOUT_S = 300
+
+
+async def build_review_index(exe, cwd, env, on_line=None, abort_check=None):
+    """Run `argus index` in the review cwd so code-review gets repo context
+    and test-reachability evidence instead of guessing at symbols. Returns
+    the created index path for post-review cleanup; None when the repo
+    already has an index (a committed argus.index.json is never touched) or
+    the scan failed — review then degrades to indexless behavior."""
+    index_path = Path(cwd) / INDEX_FILENAME
+    if index_path.exists():
+        return None
+    res = await run_argus(
+        [exe, "index"], cwd, env, timeout_s=INDEX_TIMEOUT_S,
+        on_line=on_line, abort_check=abort_check,
+    )
+    if res["spawn_error"] or res["timed_out"] or res["aborted"] or res["code"] != 0:
+        if on_line:
+            on_line("argus index produced no index — continuing without repo index")
+        return None
+    return index_path if index_path.exists() else None
+
+
+def drop_review_index(index_path):
+    """Remove an index build_review_index created. Only called for paths the
+    plugin itself just wrote."""
+    try:
+        Path(index_path).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 # --------------------------------------------------------------------------
 # CLI resolution (KTD4 — vendored binary is the only untrusted path)
 # --------------------------------------------------------------------------

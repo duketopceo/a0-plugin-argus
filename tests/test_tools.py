@@ -228,6 +228,59 @@ def test_review_bare_number_uses_default_checkout_origin(monkeypatch):
     assert "report:" in res.message
 
 
+def _trusted_checkout(monkeypatch, tmp_path, extra_env=None):
+    settings = A.load_default_config()
+    settings["trust_checkout"] = True
+    monkeypatch.setattr(A, "resolve_settings", lambda agent=None: settings)
+    calls = tmp_path / "calls.txt"
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_REVIEW_JSON": (FIXTURES / "code-review.json").read_text(),
+        "ARGUS_FAKE_CALLS": str(calls),
+        **(extra_env or {}),
+    })
+    return calls
+
+
+def test_review_indexes_checkout_before_review(monkeypatch, tmp_path):
+    _tokens(monkeypatch)
+    calls = _trusted_checkout(monkeypatch, tmp_path)
+    res = run(_tool(ArgusReview).execute(pr="owner/repo#7", checkout=str(tmp_path)))
+    assert calls.read_text().splitlines() == ["index", "code-review"]
+    # the generated index is removed after — a trusted checkout stays clean
+    assert not (tmp_path / "argus.index.json").exists()
+    assert not res.message.startswith("argus_review:")
+
+
+def test_review_index_failure_still_reviews(monkeypatch, tmp_path):
+    _tokens(monkeypatch)
+    calls = _trusted_checkout(monkeypatch, tmp_path,
+                              extra_env={"ARGUS_FAKE_INDEX_FAIL": "1"})
+    res = run(_tool(ArgusReview).execute(pr="owner/repo#7", checkout=str(tmp_path)))
+    assert calls.read_text().splitlines() == ["index", "code-review"]
+    assert not res.message.startswith("argus_review:")
+
+
+def test_review_keeps_committed_index(monkeypatch, tmp_path):
+    (tmp_path / "argus.index.json").write_text("{}")
+    _tokens(monkeypatch)
+    calls = _trusted_checkout(monkeypatch, tmp_path)
+    res = run(_tool(ArgusReview).execute(pr="owner/repo#7", checkout=str(tmp_path)))
+    # a repo's own index wins — no rebuild, and never deleted
+    assert calls.read_text().splitlines() == ["code-review"]
+    assert (tmp_path / "argus.index.json").exists()
+
+
+def test_review_without_checkout_skips_index(monkeypatch, tmp_path):
+    _tokens(monkeypatch)
+    calls = tmp_path / "calls.txt"
+    _patch_run(monkeypatch, {
+        "ARGUS_FAKE_REVIEW_JSON": (FIXTURES / "code-review.json").read_text(),
+        "ARGUS_FAKE_CALLS": str(calls),
+    })
+    res = run(_tool(ArgusReview).execute(pr="owner/repo#7"))
+    assert calls.read_text().splitlines() == ["code-review"]
+
+
 def _spy_env(monkeypatch):
     """Capture the overlay dict passed to build_child_env (after _patch_run)."""
     seen = {}
