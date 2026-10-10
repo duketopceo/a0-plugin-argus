@@ -104,6 +104,14 @@ def open_prs(repo):
     return json.loads(out.stdout)
 
 
+def _clean_title(raw):
+    """A PR title is attacker-controlled text landing inside an instruction
+    prompt. Single line, printable, capped — a title can't smuggle a second
+    instruction via newlines or sprawl."""
+    text = " ".join(str(raw or "").split())[:120]
+    return "".join(c for c in text if c.isprintable())
+
+
 def post_message(cfg, key, message, context_id):
     body = {
         "message": message,
@@ -206,7 +214,7 @@ def main():
             if daily >= int(cfg["daily_trigger_cap"]):
                 continue  # stays pending — retried tomorrow
             msg = (
-                f"PR push detected: {pr_key} — \"{pr['title']}\" "
+                f"PR push detected: {pr_key} — \"{_clean_title(pr['title'])}\" "
                 f"(head {sha8}, author {pr['author']['login']}). "
                 f"Use the argus_review tool with pr=\"{pr_key}\""
                 + (", post=\"true\"" if post else "")

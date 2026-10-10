@@ -94,7 +94,8 @@ Values are env-var **names** and policy only — never secret values.
 | `trust_checkout` | `false` | Gates `argus_flow` and the review trust path (cwd + CLI resolution) — see Security model |
 | `review_timeout_s` | `1200` | Wall-clock cap per review |
 | `flow_timeout_s` | `1800` | Wall-clock cap per flow run |
-| `argus_version_pin` | `"0.3.0"` | npm spec vendored at install; empty = latest |
+| `argus_version_pin` | `"0.3.1"` | npm spec vendored at install; empty = latest |
+| `review_budget_usd` | `""` | USD cap injected as `ARGUS_BUDGET_USD` for `argus_review` |
 | `flow_budget_usd` | `""` | USD cap injected as `ARGUS_BUDGET_USD` for `argus_flow` only |
 | `default_checkout` | `""` | Fallback checkout path for both tools; `argus_review` ignores it when its origin remote doesn't match the PR's repo |
 | `code_model` | `""` | OpenRouter model slug for `argus_review`, exported as `ARGUS_CODE_MODEL` (needs argus ≥ 0.3.1; older vendored CLIs ignore it) |
