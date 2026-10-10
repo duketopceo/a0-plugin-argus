@@ -45,7 +45,9 @@ part of an unrelated change.
   does under the test harness.
 - **`default_config.yaml` holds env-var *names* and policy, never values.**
   Adding a real key there is a credential leak.
-- **`argus_version_pin: "0.3.0"` is deliberate.** Report-schema parsing and
+- **`argus_version_pin` is deliberate** (`"0.3.1"` as of this writing — the
+  README settings table and `default_config.yaml` must agree). Report-schema
+  parsing and
   the `post_review` surface (`reviewEvent`/`reviewComments`/`headBinding`)
   are asserted against that version; older reports degrade to sticky-only.
   Bump it in its own commit with the test change — and only after the

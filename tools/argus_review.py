@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from helpers.tool import Tool, Response
@@ -16,12 +17,19 @@ class ArgusReview(Tool):
 
     async def execute(self, checkout="", pr="", post="false", **_kwargs):
         try:
-            settings = A.resolve_settings(self.agent)
+            # Settings resolve, secret loads, git probes, GitHub API calls and
+            # archive extraction are all blocking — keep them off the loop so a
+            # review never freezes the host agent.
+            settings = await asyncio.to_thread(A.resolve_settings, self.agent)
             trusted = A._truthy(settings.get("trust_checkout"))
             post_flag = A._truthy(post)
 
-            gh_token, gh_name = A.env_value(settings, "github_token_env", "GITHUB_TOKEN")
-            or_key, or_name = A.env_value(settings, "openrouter_key_env", "OPENROUTER_API_KEY")
+            gh_token, gh_name = await asyncio.to_thread(
+                A.env_value, settings, "github_token_env", "GITHUB_TOKEN"
+            )
+            or_key, or_name = await asyncio.to_thread(
+                A.env_value, settings, "openrouter_key_env", "OPENROUTER_API_KEY"
+            )
             if not or_key:
                 return self._fail(f"`{or_name}` is not set in the A0 host environment.")
             if not gh_token:
@@ -30,7 +38,9 @@ class ArgusReview(Tool):
             # Fail before spending on the review if posting can't work.
             comment_token = gh_token
             if post_flag:
-                ctok, ctok_name = A.env_value(settings, "comment_token_env")
+                ctok, ctok_name = await asyncio.to_thread(
+                    A.env_value, settings, "comment_token_env"
+                )
                 if ctok_name and not ctok:
                     return self._fail(
                         f"post=true requested but `{ctok_name}` is not set in the A0 host environment."
@@ -41,14 +51,18 @@ class ArgusReview(Tool):
             checkout = (
                 checkout_arg or (settings.get("default_checkout") or "").strip() or None
             )
-            owner, repo, number = A.normalize_pr(pr, checkout=checkout)
+            owner, repo, number = await asyncio.to_thread(
+                A.normalize_pr, pr, checkout
+            )
             # A default_checkout for a different repo would review the wrong
             # tree — only an explicit checkout is trusted to cross repos.
             mismatch_note = ""
             if (
                 checkout_arg is None
                 and checkout is not None
-                and not A.checkout_matches_repo(checkout, owner, repo)
+                and not await asyncio.to_thread(
+                    A.checkout_matches_repo, checkout, owner, repo
+                )
             ):
                 mismatch_note = (
                     f"; configured default_checkout '{checkout}' does not belong to "
@@ -56,7 +70,7 @@ class ArgusReview(Tool):
                 )
                 checkout = None
 
-            probe = runtime.read_probe_cache()
+            probe = await asyncio.to_thread(runtime.read_probe_cache)
             if probe and not probe.get("node_ok"):
                 return self._fail(
                     "Node.js is not available in this A0 environment "
@@ -70,9 +84,13 @@ class ArgusReview(Tool):
                     "include argus-reviewer-e2e."
                 )
 
-            pr_payload = A.preflight_pr(owner, repo, number, gh_token)
+            pr_payload = await asyncio.to_thread(
+                A.preflight_pr, owner, repo, number, gh_token
+            )
 
-            cwd, cwd_note = A.prepare_review_cwd(checkout, trusted)
+            cwd, cwd_note = await asyncio.to_thread(
+                A.prepare_review_cwd, checkout, trusted
+            )
             cwd_note += mismatch_note
             report_dir = A.fresh_report_dir()
             env = A.build_child_env(
@@ -116,7 +134,7 @@ class ArgusReview(Tool):
                     A.drop_review_index(index_path)
             if res["spawn_error"]:
                 return self._fail(f"could not start argus: {res['spawn_error']}")
-            report = A.parse_review_report(report_dir)
+            report = await asyncio.to_thread(A.parse_review_report, report_dir)
             if res["timed_out"]:
                 return self._fail(
                     "argus code-review exceeded the timeout and was killed.\n\n"
@@ -127,11 +145,15 @@ class ArgusReview(Tool):
             review = None
             if post_flag and report is not None:
                 body = A.render_sticky_body(report)
-                posted = A.post_sticky(owner, repo, number, body, comment_token)
+                posted = await asyncio.to_thread(
+                    A.post_sticky, owner, repo, number, body, comment_token
+                )
                 # Batched inline review after the sticky — a review failure
                 # must not fail the tool once the sticky has landed.
                 try:
-                    review = A.post_review(report, pr_payload, comment_token)
+                    review = await asyncio.to_thread(
+                        A.post_review, report, pr_payload, comment_token
+                    )
                 except A.ArgusError as e:
                     review = {"status": "failed", "reason": str(e)}
 
