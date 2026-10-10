@@ -21,6 +21,7 @@ import subprocess
 import tarfile
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -295,8 +296,16 @@ async def run_argus(argv, cwd, env, timeout_s, on_line=None, abort_check=None):
                 return
             await asyncio.sleep(1.0)
 
+    async def _wait_exit():
+        # proc.wait() resolves only after the transport's pipes reach EOF —
+        # a leaked grandchild inheriting our stdout holds it open forever and
+        # would make even a clean exit look like a full-timeout hang. Poll the
+        # returncode instead: it flips the moment the child watcher reaps.
+        while proc.returncode is None:
+            await asyncio.sleep(0.1)
+
     pump = asyncio.ensure_future(_pump())
-    waiter = asyncio.ensure_future(proc.wait())
+    waiter = asyncio.ensure_future(_wait_exit())
     watcher = asyncio.ensure_future(_watch_abort()) if abort_check else None
     try:
         done, _pending = await asyncio.wait(
@@ -318,10 +327,28 @@ async def run_argus(argv, cwd, env, timeout_s, on_line=None, abort_check=None):
                 os.killpg(proc.pid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 pass
-        await proc.wait()
-        await pump
+        try:
+            await asyncio.wait_for(waiter, timeout=10)
+        except asyncio.TimeoutError:
+            pass  # unkillable (D-state) child — abandon rather than hang
+        # Same pipe-holding-grandchild hole on the drain side: bound the pump,
+        # then drop the pipe rather than wait out a stranger's lifetime.
+        try:
+            await asyncio.wait_for(pump, timeout=5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pump.cancel()
+            try:
+                await pump
+            except (asyncio.CancelledError, Exception):
+                pass
         if watcher:
             watcher.cancel()
+        # Release the pipes now — a leaked pipe-holder otherwise leaves the
+        # transport alive until GC, where it errors against a closed loop.
+        try:
+            proc._transport.close()
+        except Exception:
+            pass
     result["code"] = proc.returncode
     result["tail"] = tail.getvalue()[-TAIL_BYTES:]
     return result
@@ -449,6 +476,28 @@ def resolve_cli(checkout=None, trusted=False):
 # GitHub API (stdlib only)
 # --------------------------------------------------------------------------
 
+class _AuthSafeRedirect(urllib.request.HTTPRedirectHandler):
+    """urllib's default redirect handler copies every header — including
+    Authorization — to whatever host the Location points at. GitHub legit
+    301s (renamed repos) stay same-host; anything else would forward the
+    token, so foreign netlocs and https downgrades are refused outright."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        orig = urllib.parse.urlparse(req.full_url)
+        dest = urllib.parse.urlparse(newurl)
+        foreign = dest.netloc.lower() != orig.netloc.lower()
+        downgrade = orig.scheme == "https" and dest.scheme != "https"
+        if foreign or downgrade:
+            raise ArgusError(
+                f"refusing redirect to {newurl!r} — the auth token must stay "
+                "on api.github.com"
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_GH_OPENER = urllib.request.build_opener(_AuthSafeRedirect())
+
+
 def _gh(method, url, token, body=None, timeout=30):
     req = urllib.request.Request(
         url,
@@ -462,7 +511,7 @@ def _gh(method, url, token, body=None, timeout=30):
         data=json.dumps(body).encode() if body is not None else None,
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _GH_OPENER.open(req, timeout=timeout) as resp:
             return resp.status, json.loads(resp.read() or b"null"), dict(resp.headers)
     except urllib.error.HTTPError as e:
         try:

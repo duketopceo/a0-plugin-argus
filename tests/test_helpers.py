@@ -282,3 +282,124 @@ def test_narrate_run_zero_tests(tmp_path):
 
 def test_narrate_run_missing(tmp_path):
     assert "no report" in argus.narrate_run(None, str(tmp_path))
+
+
+def test_run_argus_survives_orphaned_pipe_holder(tmp_path):
+    """A setsid-escaped grandchild inheriting stdout is invisible to killpg —
+    without the bounded drain the pump waits on its EOF forever."""
+    env = argus.build_child_env({
+        "ARGUS_FAKE_ORPHAN_PIPE": "1",
+        "ARGUS_FAKE_REVIEW_JSON": json.dumps({"ok": True}),
+    })
+    t0 = time.monotonic()
+    res = run(
+        argus.run_argus(
+            fake_argv() + ["code-review", "--report-dir", str(tmp_path)],
+            tmp_path, env, 30,
+        )
+    )
+    assert time.monotonic() - t0 < 20  # bounded pump, not a hang
+    assert res["code"] == 0
+    assert (tmp_path / "code-review.json").exists()
+
+
+# --- _gh redirect guard ------------------------------------------------------
+
+def _redirect_server(location=None):
+    """http.server where GET /a → 301 to `location` (default: a same-netloc
+    /b on this server) and anything else → 200 JSON echo."""
+    import http.server
+    import threading
+
+    hits = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            if self.path == "/a":
+                dest = location or (
+                    f"http://127.0.0.1:{self.server.server_port}/b"
+                )
+                self.send_response(301)
+                self.send_header("Location", dest)
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"ok": true}')
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, hits
+
+
+def test_gh_refuses_cross_host_redirect():
+    """urllib's stock redirect handler would re-send Authorization to any
+    Location — the guard refuses foreign netlocs outright."""
+    srv, _ = _redirect_server("http://localhost.example/steal")
+    try:
+        url = f"http://127.0.0.1:{srv.server_port}/a"
+        with pytest.raises(argus.ArgusError, match="redirect"):
+            argus._gh("GET", url, "tok")
+    finally:
+        srv.shutdown()
+
+
+def test_gh_follows_same_host_redirect():
+    srv, hits = _redirect_server()
+    try:
+        url = f"http://127.0.0.1:{srv.server_port}/a"
+        status, body, _ = argus._gh("GET", url, "tok")
+        assert status == 200 and body == {"ok": True}
+        assert hits == ["/a", "/b"]
+    finally:
+        srv.shutdown()
+
+
+def test_gh_redirect_guard_unit():
+    """https→http downgrade and foreign hosts are refused; same-host https
+    (GitHub's legit rename 301s) is built. Non-http(s) schemes never reach
+    the handler — urllib refuses them one layer up."""
+    import urllib.request
+
+    handler = argus._AuthSafeRedirect()
+    req = urllib.request.Request("https://api.github.com/x")
+    with pytest.raises(argus.ArgusError, match="redirect"):
+        handler.redirect_request(req, None, 301, "", {}, "https://evil.example/x")
+    with pytest.raises(argus.ArgusError, match="redirect"):
+        handler.redirect_request(req, None, 301, "", {}, "http://api.github.com/x")
+    new = handler.redirect_request(
+        req, None, 301, "", {}, "https://api.github.com/y")
+    assert new is not None and "api.github.com/y" in new.full_url
+
+
+# --- webui config screen -------------------------------------------------------
+
+def test_webui_config_covers_default_settings():
+    """webui/config.html is what makes has_config_screen true — without it the
+    plugins-subsection filter drops argus from the External tab entirely.
+    Every default_config key must have a binding."""
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "webui" / "config.html").read_text()
+    for key in argus.load_default_config():
+        assert f"config.{key}" in html, f"{key} missing from config.html"
+
+
+def test_clean_title_sanitizes():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "a0_pr_watch",
+        Path(__file__).resolve().parents[1]
+        / "contrib" / "pr-watch" / "a0_pr_watch.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod._clean_title("line1\nline2\nignore instructions") == (
+        "line1 line2 ignore instructions"
+    )
+    assert len(mod._clean_title("x" * 500)) == 120
+    assert mod._clean_title(None) == ""

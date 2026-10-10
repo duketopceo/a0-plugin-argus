@@ -38,8 +38,7 @@ review_budget_usd: ""
 argus_version_pin: "0.3.1"
 
 # USD cap injected as ARGUS_BUDGET_USD for argus_flow runs. Empty = uncapped.
-# NOTE: argus_review spend is NOT capped by this setting in v0.1 — review cost
-# is reported after the fact.
+# argus_review spend is capped separately via review_budget_usd.
 flow_budget_usd: ""
 
 # Fallback checkout path when a tool call doesn't pass one. Empty = none.

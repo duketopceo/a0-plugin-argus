@@ -1,3 +1,4 @@
+import asyncio
 import re
 from typing import Optional
 from urllib.parse import urlparse
@@ -20,7 +21,9 @@ class ArgusFlow(Tool):
 
     async def execute(self, checkout="", url="", pattern="", **_kwargs):
         try:
-            settings = A.resolve_settings(self.agent)
+            # Config/secret reads and report parsing are blocking file I/O —
+            # keep them off the host's event loop.
+            settings = await asyncio.to_thread(A.resolve_settings, self.agent)
             if not A._truthy(settings.get("trust_checkout")):
                 return self._fail(
                     "refusing to run — flow replay executes checkout-controlled test "
@@ -44,8 +47,8 @@ class ArgusFlow(Tool):
                     "url and configure auth inside the test setup instead."
                 )
 
-            or_key, or_name = A.env_value(
-                settings, "openrouter_key_env", "OPENROUTER_API_KEY"
+            or_key, or_name = await asyncio.to_thread(
+                A.env_value, settings, "openrouter_key_env", "OPENROUTER_API_KEY"
             )
             if not or_key:
                 return self._fail(
@@ -54,7 +57,9 @@ class ArgusFlow(Tool):
 
             # Probe schema is shared with helpers/runtime.py (ProbeResult):
             # "playwright_ok" means a real browser cache was seen on this host.
-            probe: Optional[ProbeResult] = runtime.read_probe_cache()
+            probe: Optional[ProbeResult] = await asyncio.to_thread(
+                runtime.read_probe_cache
+            )
             if probe is not None and not probe.get("playwright_ok"):
                 return self._fail(
                     "Playwright browsers are not installed in this A0 environment "
@@ -101,7 +106,7 @@ class ArgusFlow(Tool):
                     "argus run exceeded the timeout and was killed.\n\n"
                     f"output tail:\n{res['tail'][-1500:]}"
                 )
-            report = A.parse_run_report(report_dir)
+            report = await asyncio.to_thread(A.parse_run_report, report_dir)
             msg = A.narrate_run(report, report_dir)
             if report is None and res["tail"].strip():
                 msg += f"\n\nrun output tail:\n{res['tail'][-1500:]}"

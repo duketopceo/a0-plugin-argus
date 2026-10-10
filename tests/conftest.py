@@ -28,7 +28,9 @@ sys.modules["usr.plugins.argus"] = _argus
 # --- minimal A0 framework stub ------------------------------------------------
 
 class Response:
-    def __init__(self, message="", break_loop=False, additional=None, **kw):
+    """helpers.tool.Response is a dataclass — break_loop is REQUIRED; a
+    default here would let a tool omit it and only fail on the real host."""
+    def __init__(self, message, break_loop, additional=None, **kw):
         self.message = message
         self.break_loop = break_loop
         self.additional = additional or {}

@@ -1,0 +1,122 @@
+<html>
+<head>
+  <title>Argus Settings</title>
+</head>
+<body>
+  <div x-data class="argus-config">
+    <p class="argus-note">
+      Fields hold environment-variable <strong>names</strong> and policy only —
+      secret values live in Agent Zero Secrets or the host environment, never
+      here.
+    </p>
+
+    <div class="argus-card">
+      <h3><x-icon name="key"></x-icon> Credentials</h3>
+      <label class="argus-field">
+        <span class="f-title">GitHub token env var</span>
+        <input type="text" x-model="config.github_token_env"
+               placeholder="GITHUB_TOKEN" />
+        <span class="f-desc">PR reads (and posting when no comment token is set).</span>
+      </label>
+      <label class="argus-field">
+        <span class="f-title">Comment token env var</span>
+        <input type="text" x-model="config.comment_token_env"
+               placeholder="empty = use the GitHub token" />
+        <span class="f-desc">Separate posting token; needs Issues + Pull requests write.</span>
+      </label>
+      <label class="argus-field">
+        <span class="f-title">OpenRouter key env var</span>
+        <input type="text" x-model="config.openrouter_key_env"
+               placeholder="OPENROUTER_API_KEY" />
+        <span class="f-desc">BYOK model spend for reviews and flow runs.</span>
+      </label>
+    </div>
+
+    <div class="argus-card">
+      <h3><x-icon name="timer"></x-icon> Limits</h3>
+      <div class="argus-grid">
+        <label class="argus-field">
+          <span class="f-title">Review timeout (s)</span>
+          <input type="number" min="1" max="14400" x-model.number="config.review_timeout_s" />
+        </label>
+        <label class="argus-field">
+          <span class="f-title">Flow timeout (s)</span>
+          <input type="number" min="1" max="7200" x-model.number="config.flow_timeout_s" />
+        </label>
+        <label class="argus-field">
+          <span class="f-title">Review budget (USD)</span>
+          <input type="text" x-model="config.review_budget_usd" placeholder="empty = uncapped" />
+        </label>
+        <label class="argus-field">
+          <span class="f-title">Flow budget (USD)</span>
+          <input type="text" x-model="config.flow_budget_usd" placeholder="empty = uncapped" />
+        </label>
+      </div>
+    </div>
+
+    <div class="argus-card">
+      <h3><x-icon name="tune"></x-icon> Behavior</h3>
+      <label class="argus-field">
+        <span class="f-title">argus version pin</span>
+        <input type="text" x-model="config.argus_version_pin" placeholder="0.3.1" />
+        <span class="f-desc">npm spec vendored at install; empty = latest.</span>
+      </label>
+      <label class="argus-field">
+        <span class="f-title">Code model</span>
+        <input type="text" x-model="config.code_model"
+               placeholder="empty = CLI default" />
+        <span class="f-desc">OpenRouter model slug for reviews (argus ≥ 0.3.1).</span>
+      </label>
+      <label class="argus-field">
+        <span class="f-title">Default checkout</span>
+        <input type="text" x-model="config.default_checkout" placeholder="empty = none" />
+        <span class="f-desc">Fallback checkout path; ignored when its origin doesn't match the PR's repo.</span>
+      </label>
+      <label class="argus-field argus-inline">
+        <input type="checkbox" x-model="config.trust_checkout" />
+        <span class="f-title">Trust checkout code</span>
+      </label>
+      <p class="argus-warn">
+        <x-icon name="warning"></x-icon>
+        When enabled, <code>argus_flow</code> executes the checkout's test
+        files and <code>argus_review</code> runs inside the real checkout —
+        repository-controlled code runs on this host. Enable only for
+        checkouts you would hand a terminal to.
+      </p>
+    </div>
+  </div>
+
+  <style>
+    .argus-config { display: grid; gap: 1rem; }
+    .argus-note {
+      margin: 0; font-size: var(--font-size-small);
+      color: var(--color-text-secondary);
+    }
+    .argus-card {
+      border: 1px solid var(--color-border); border-radius: 6px;
+      padding: 0.75rem 1rem;
+    }
+    .argus-card h3 {
+      display: flex; align-items: center; gap: 0.4rem;
+      margin: 0 0 0.75rem; font-size: var(--font-size-normal);
+    }
+    .argus-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;
+    }
+    .argus-field { display: grid; gap: 0.25rem; margin-bottom: 0.75rem; }
+    .argus-field:last-child { margin-bottom: 0; }
+    .argus-field .f-title { font-weight: 600; }
+    .argus-field .f-desc {
+      font-size: var(--font-size-small); color: var(--color-text-secondary);
+    }
+    .argus-inline { display: flex; align-items: center; gap: 0.5rem; }
+    .argus-warn {
+      display: flex; align-items: flex-start; gap: 0.5rem;
+      margin: 0.5rem 0 0; padding: 0.5rem 0.75rem;
+      border-radius: 4px; font-size: var(--font-size-small);
+      color: var(--color-text-secondary);
+      background: var(--color-bg-secondary);
+    }
+  </style>
+</body>
+</html>

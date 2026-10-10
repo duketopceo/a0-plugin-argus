@@ -5,16 +5,29 @@
   ARGUS_FAKE_STDERR  — text to print to stderr
   ARGUS_FAKE_CALLS   — file to append each invoked subcommand to
   ARGUS_FAKE_INDEX_FAIL — `index` exits 1 instead of writing argus.index.json
+  ARGUS_FAKE_ORPHAN_PIPE — spawn a setsid'd grandchild that inherits our
+      stdout and sleeps 60s, then exit. Simulates a leaked pipe-holder:
+      killpg can't reach it (it escaped the group) so a naive stdout drain
+      would hang waiting for EOF.
 Writes tests/fixtures-style JSON into --report-dir.
 """
 
 import json
 import os
+import subprocess
 import sys
 import time
 
 
 def main():
+    if os.environ.get("ARGUS_FAKE_ORPHAN_PIPE"):
+        subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdin=subprocess.DEVNULL,
+            stdout=sys.stdout,      # inherit — holds the pipe past our exit
+            stderr=subprocess.DEVNULL,
+            start_new_session=True, # escape our process group: killpg-proof
+        )
     sleep = float(os.environ.get("ARGUS_FAKE_SLEEP", "0") or 0)
     if sleep:
         time.sleep(sleep)
