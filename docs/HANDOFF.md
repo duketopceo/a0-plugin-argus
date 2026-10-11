@@ -1,4 +1,12 @@
-# Handoff — current state
+# Handoff — historical snapshot (2026-09-21)
+
+> **Superseded.** This page describes state as of 2026-09-21 and is kept for
+> history. Since then: Argus released 0.3.0, 0.3.1, 0.4.x and 0.5.0 (latest on
+> npm: 0.5.0, 2026-10-07); this plugin's `argus_version_pin` is `0.3.1`
+> (`default_config.yaml`, bumped in #8); Argus #53 was closed as completed on
+> 2026-10-01 (live round-trip proven, via Argus #109). agent0ai/a0-plugins#572
+> is still open. For current setup see [`ONBOARDING.md`](ONBOARDING.md) and
+> the [README](../README.md).
 
 Updated 2026-09-21 on omarchy-max. Everything below is recoverable from
 git history + GitHub; this doc is the map.

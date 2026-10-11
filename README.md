@@ -48,7 +48,10 @@ https://github.com/duketopceo/a0-plugin-argus
 At install, `hooks.py` probes `node`/`npm`/`git`/Playwright and runs
 `npm install argus-reviewer-e2e` (respecting `argus_version_pin`) into the
 plugin directory — the review path spawns this **vendored** binary, never a
-binary found inside an untrusted checkout. If vendoring fails (no npm, no
+binary found inside an untrusted checkout. Before each review the plugin runs
+`argus index` in the review directory so the reviewer has repo context; a
+committed `argus.index.json` is used as-is, a generated one is deleted after
+the review, and a failed scan falls back to an indexless review. If vendoring fails (no npm, no
 network), the plugin still loads; `argus_review` tells you to reinstall or
 enable `trust_checkout` with a checkout that has argus as a dependency.
 
@@ -76,7 +79,8 @@ works when your token already lives in the secrets store.
 ### OpenRouter key
 
 - A spend-limited key is strongly recommended — review spend is reported after
-  the fact, and in v0.1 only `argus_flow` spend is capped by a plugin setting.
+  the fact unless you set `review_budget_usd` (and `flow_budget_usd` for
+  `argus_flow`); both are passed to argus as `ARGUS_BUDGET_USD`.
 
 If posting should use a *different* token than reading, set `comment_token_env`
 to a second variable name holding an Issues + Pull-requests-capable token.
@@ -223,8 +227,9 @@ carrying the sentinel (or an empty body) are dismissed — a human's
   deferred.
 - No local-diff review mode; review needs a real github.com PR.
 - GitHub.com only (no GHES/Gitea).
-- Review spend is **uncapped** — cost is narrated after the fact. Only
-  `argus_flow` honors `flow_budget_usd`.
+- Review spend is capped only when `review_budget_usd` is set; otherwise cost
+  is narrated after the fact. The default pin (argus 0.3.1) predates Argus's
+  built-in $1 per-run default, which first ships in argus 0.4.2.
 
 ## License
 
