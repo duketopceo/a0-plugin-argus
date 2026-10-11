@@ -48,7 +48,7 @@ https://github.com/duketopceo/a0-plugin-argus
 At install, `hooks.py` probes `node`/`npm`/`git`/Playwright and runs
 `npm install argus-reviewer-e2e` (respecting `argus_version_pin`) into the
 plugin directory — the review path spawns this **vendored** binary, never a
-binary found inside an untrusted checkout. Before each review the plugin runs
+binary found inside an untrusted checkout. When a `checkout` is given, the plugin runs
 `argus index` in the review directory so the reviewer has repo context; a
 committed `argus.index.json` is used as-is, a generated one is deleted after
 the review, and a failed scan falls back to an indexless review. If vendoring fails (no npm, no
