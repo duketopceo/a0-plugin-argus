@@ -15,19 +15,19 @@
       <label class="argus-field">
         <span class="f-title">GitHub token env var</span>
         <input type="text" x-model="config.github_token_env"
-               placeholder="GITHUB_TOKEN" />
+               placeholder="GITHUB_TOKEN" class="argus-mono" />
         <span class="f-desc">PR reads (and posting when no comment token is set).</span>
       </label>
       <label class="argus-field">
         <span class="f-title">Comment token env var</span>
         <input type="text" x-model="config.comment_token_env"
-               placeholder="empty = use the GitHub token" />
+               placeholder="empty = use the GitHub token" class="argus-mono" />
         <span class="f-desc">Separate posting token; needs Issues + Pull requests write.</span>
       </label>
       <label class="argus-field">
         <span class="f-title">OpenRouter key env var</span>
         <input type="text" x-model="config.openrouter_key_env"
-               placeholder="OPENROUTER_API_KEY" />
+               placeholder="OPENROUTER_API_KEY" class="argus-mono" />
         <span class="f-desc">BYOK model spend for reviews and flow runs.</span>
       </label>
     </div>
@@ -58,18 +58,18 @@
       <h3><x-icon name="tune"></x-icon> Behavior</h3>
       <label class="argus-field">
         <span class="f-title">argus version pin</span>
-        <input type="text" x-model="config.argus_version_pin" placeholder="0.3.1" />
+        <input type="text" x-model="config.argus_version_pin" placeholder="0.3.1" class="argus-mono" />
         <span class="f-desc">npm spec vendored at install; empty = latest.</span>
       </label>
       <label class="argus-field">
         <span class="f-title">Code model</span>
         <input type="text" x-model="config.code_model"
-               placeholder="empty = CLI default" />
+               placeholder="empty = CLI default" class="argus-mono" />
         <span class="f-desc">OpenRouter model slug for reviews (argus ≥ 0.3.1).</span>
       </label>
       <label class="argus-field">
         <span class="f-title">Default checkout</span>
-        <input type="text" x-model="config.default_checkout" placeholder="empty = none" />
+        <input type="text" x-model="config.default_checkout" placeholder="empty = none" class="argus-mono" />
         <span class="f-desc">Fallback checkout path; ignored when its origin doesn't match the PR's repo.</span>
       </label>
       <label class="argus-field argus-inline">
@@ -89,37 +89,56 @@
   </div>
 
   <style>
-    .argus-config { display: grid; gap: 1rem; }
+    /* Patchbay tokens (see DESIGN.md). Host theme variables win where they
+       exist; these are the fallbacks and the accent/warn roles. */
+    .argus-config {
+      --ar-signal: #00766E; --ar-warn: #A33A00; --ar-hair: #C5CDD2;
+      --ar-mono: "JetBrains Mono", ui-monospace, monospace;
+      display: grid; gap: 1rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      .argus-config { --ar-signal: #3FD3C4; --ar-warn: #FF9F6B; --ar-hair: #2A343D; }
+    }
     .argus-note {
       margin: 0; font-size: var(--font-size-small);
       color: var(--color-text-secondary);
     }
     .argus-card {
-      border: 1px solid var(--color-border); border-radius: 6px;
+      border: 1px solid var(--color-border, var(--ar-hair)); border-radius: 8px;
       padding: 0.75rem 1rem;
     }
     .argus-card h3 {
       display: flex; align-items: center; gap: 0.4rem;
       margin: 0 0 0.75rem; font-size: var(--font-size-normal);
+      font-family: var(--ar-mono); letter-spacing: 0.02em;
     }
     .argus-grid {
       display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;
       align-items: start;
     }
+    @media (max-width: 480px) { .argus-grid { grid-template-columns: 1fr; } }
     .argus-field { display: grid; gap: 0.25rem; margin-bottom: 0.75rem; }
     .argus-field:last-child { margin-bottom: 0; }
     .argus-field .f-title { font-weight: 600; }
     .argus-field .f-desc {
       font-size: var(--font-size-small); color: var(--color-text-secondary);
     }
+    .argus-mono { font-family: var(--ar-mono); font-size: 0.9em; }
+    .argus-config input:focus-visible {
+      outline: 2px solid var(--ar-signal); outline-offset: 1px;
+    }
     .argus-inline { display: flex; align-items: center; gap: 0.5rem; }
+    .argus-inline input { accent-color: var(--ar-signal); }
     .argus-warn {
       display: flex; align-items: flex-start; gap: 0.5rem;
       margin: 0.5rem 0 0; padding: 0.5rem 0.75rem;
       border-radius: 4px; font-size: var(--font-size-small);
       color: var(--color-text-secondary);
       background: var(--color-bg-secondary);
+      border-left: 3px solid var(--ar-warn);
     }
+    .argus-warn x-icon { color: var(--ar-warn); flex: none; }
+    @media (prefers-reduced-motion: reduce) { .argus-config * { transition: none !important; } }
   </style>
 </body>
 </html>
