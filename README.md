@@ -1,4 +1,9 @@
-# a0-plugin-argus
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/wordmark-dark.svg">
+    <img alt="a0-plugin-argus" src="assets/brand/wordmark.svg" height="56">
+  </picture>
+</p>
 
 An [Agent Zero](https://github.com/agent0ai/agent-zero) plugin that adds two
 tools backed by [Argus](https://github.com/duketopceo/Argus)
@@ -15,6 +20,30 @@ tools backed by [Argus](https://github.com/duketopceo/Argus)
 Bring your own keys — the plugin never ships or stores secrets. Tokens live as
 environment variables on your A0 host; the plugin only reads their names from
 settings.
+
+Status: v0.1.0, tested offline (87 tests, no network or keys). See [ROADMAP.md](ROADMAP.md).
+
+<p align="center">
+  <img alt="Settings panel, dark" src="docs/screenshots/settings-panel-after-dark.png" width="420">
+  <img alt="Settings panel, light" src="docs/screenshots/settings-panel-after-light.png" width="420">
+</p>
+
+<sub>Settings panel rendered in a test harness with stand-in host theme variables, not inside a live Agent Zero.</sub>
+
+## How it works
+
+```mermaid
+flowchart LR
+  T[argus_review / argus_flow tool] --> C{checkout?}
+  C -->|none| S[empty scratch dir]
+  C -->|trust_checkout false| A[git archive copy, config files removed]
+  C -->|trust_checkout true| R[real checkout]
+  S & A & R --> X[vendored argus-reviewer-e2e]
+  X -->|OpenRouter key| M[review model]
+  X --> P[code-review.json]
+  P --> N[findings narrated in chat]
+  P -->|post true| G[sticky comment + one batched inline review]
+```
 
 ## Requirements
 
@@ -48,7 +77,10 @@ https://github.com/duketopceo/a0-plugin-argus
 At install, `hooks.py` probes `node`/`npm`/`git`/Playwright and runs
 `npm install argus-reviewer-e2e` (respecting `argus_version_pin`) into the
 plugin directory — the review path spawns this **vendored** binary, never a
-binary found inside an untrusted checkout. If vendoring fails (no npm, no
+binary found inside an untrusted checkout. When a `checkout` is given, the plugin runs
+`argus index` in the review directory so the reviewer has repo context; a
+committed `argus.index.json` is used as-is, a generated one is deleted after
+the review, and a failed scan falls back to an indexless review. If vendoring fails (no npm, no
 network), the plugin still loads; `argus_review` tells you to reinstall or
 enable `trust_checkout` with a checkout that has argus as a dependency.
 
@@ -76,7 +108,8 @@ works when your token already lives in the secrets store.
 ### OpenRouter key
 
 - A spend-limited key is strongly recommended — review spend is reported after
-  the fact, and in v0.1 only `argus_flow` spend is capped by a plugin setting.
+  the fact unless you set `review_budget_usd` (and `flow_budget_usd` for
+  `argus_flow`); both are passed to argus as `ARGUS_BUDGET_USD`.
 
 If posting should use a *different* token than reading, set `comment_token_env`
 to a second variable name holding an Issues + Pull-requests-capable token.
@@ -223,8 +256,17 @@ carrying the sentinel (or an empty body) are dismissed — a human's
   deferred.
 - No local-diff review mode; review needs a real github.com PR.
 - GitHub.com only (no GHES/Gitea).
-- Review spend is **uncapped** — cost is narrated after the fact. Only
-  `argus_flow` honors `flow_budget_usd`.
+- Review spend is capped only when `review_budget_usd` is set; otherwise cost
+  is narrated after the fact. The default pin (argus 0.3.1) predates Argus's
+  built-in $1 per-run default, which first ships in argus 0.4.2.
+
+## Contributing
+
+Run `python3.12 -m pytest tests/ -q` (offline; `pip install pytest`). Read
+[AGENTS.md](AGENTS.md) before touching `helpers/argus.py`; the posting lane
+must stay in lockstep with the Argus Action. Design direction and brand
+assets (a proposal, pending owner sign-off): [DESIGN.md](DESIGN.md),
+[assets/brand/](assets/brand/).
 
 ## License
 
