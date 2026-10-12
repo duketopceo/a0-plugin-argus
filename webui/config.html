@@ -78,10 +78,12 @@
       </label>
       <p class="argus-warn">
         <x-icon name="warning"></x-icon>
-        When enabled, <code>argus_flow</code> executes the checkout's test
-        files and <code>argus_review</code> runs inside the real checkout —
-        repository-controlled code runs on this host. Enable only for
-        checkouts you would hand a terminal to.
+        <span>
+          When enabled, <code>argus_flow</code> executes the checkout's test
+          files and <code>argus_review</code> runs inside the real checkout —
+          repository-controlled code runs on this host. Enable only for
+          checkouts you would hand a terminal to.
+        </span>
       </p>
     </div>
   </div>
@@ -102,6 +104,7 @@
     }
     .argus-grid {
       display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;
+      align-items: start;
     }
     .argus-field { display: grid; gap: 0.25rem; margin-bottom: 0.75rem; }
     .argus-field:last-child { margin-bottom: 0; }
